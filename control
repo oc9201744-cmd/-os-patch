@@ -1,0 +1,9 @@
+Package: com.seninadın.tssbypass
+Name: TssBypass
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Dobby-free Memory Patch Bypass
+Maintainer: Sen
+Author: Sen
+Section: Tweaks
