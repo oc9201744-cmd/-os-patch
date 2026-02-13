@@ -24,7 +24,7 @@ jobs:
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Build Dobby (Force Static Only)
+      - name: Build Dobby (Full Merge)
         run: |
           rm -rf Dobby
           git clone --recursive https://github.com/jmpews/Dobby.git
@@ -40,18 +40,23 @@ jobs:
             -DPlugin.SymbolResolver=OFF \
             -DCMAKE_BUILD_TYPE=Release
           
-          # BURASI KRİTİK: Sadece statik olanı derle diyoruz, hata veren dylib'i denemiyoruz bile
-          make dobby_static -j$(sysctl -n hw.ncpu)
+          # Hepsini derle
+          make dobby_static logging osbase -j$(sysctl -n hw.ncpu)
           
-          # Başarıyla oluşan dosyaları ana dizine al
-          cp libdobby.a ../../
-          mkdir -p ../../include
-          cp -r ../include/* ../../include/
+          # KRİTİK ADIM: Tüm statik kütüphaneleri TEK BİR DOSYADA birleştir
+          # Bu sayede 'OSMemory' ve 'logging' hataları yok olacak.
+          libtool -static -o ../../libdobby.a \
+            libdobby.a \
+            external/logging/liblogging.a \
+            external/osbase/libosbase.a
+          
+          cd ../..
+          mkdir -p include
+          cp -r Dobby/include/* include/
 
       - name: Build Project
         run: |
-          # Eksik sembolleri (OSMemory vb.) Dobby'nin içinden çekmesi için -all_load kullanıyoruz
-          export LDFLAGS="-Wl,-all_load"
+          # Artık libdobby.a tam dolu bir paket!
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
