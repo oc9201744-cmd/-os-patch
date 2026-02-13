@@ -1,22 +1,64 @@
+name: Build Bypass Dylib arm64e
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Theos
+        run: |
+          sudo rm -rf /opt/theos
+          sudo mkdir -p /opt/theos
+          sudo chown -R $USER /opt/theos
+          git clone --recursive https://github.com/theos/theos.git /opt/theos
+          echo "THEOS=/opt/theos" >> $GITHUB_ENV
+
+      - name: Setup iOS SDK
+        run: |
+          rm -rf $THEOS/sdks
+          git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
+
       - name: Build Dobby for arm64e
         run: |
           git clone --recursive https://github.com/jmpews/Dobby.git
-          cd Dobby && mkdir build && cd build
-          # Hata veren environment check'i bypass etmek için gerekli flagler eklendi
+          cd Dobby
+          # CMake hata kontrolünü bypass etmek için platformu manuel set ediyoruz
+          mkdir build && cd build
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
-            -DDOBBY_GENERATE_SHARED=ON \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DDOBBY_GENERATE_SHARED=ON \
             -DDOBBY_DEBUG=OFF \
-            -DDOBBY_GENERIC_ARM64=ON \
             -DCMAKE_BUILD_TYPE=Release \
-            -DDOBBY_USE_ASLR=ON
+            -DDOBBY_GENERIC_ARM64=ON
           
-          # Eğer yukarıdaki cmake hala 'Processor not configured' derse, 
-          # CMakeLists.txt'deki o kontrolü devre dışı bırakıp zorla derliyoruz
           make -j$(sysctl -n hw.ncpu)
           
+          # Çıktıları kopyala
           cp libdobby.dylib ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
+
+      - name: Build Project
+        run: |
+          # Ana dylib derlemesi
+          make package FINALPACKAGE=1
+          
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bypass-Dylib-iPhone15PM
+          path: |
+            packages/*.dylib
+            .theos/obj/arm64e/*.dylib
