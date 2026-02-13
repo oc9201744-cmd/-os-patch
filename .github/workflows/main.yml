@@ -1,40 +1,49 @@
-name: Build Bypass arm64e
+#include <mach-o/dyld.h>
+#include <mach/mach.h>
+#include <cstdint>
+#include <cstdio>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <vector>
+#include <libkern/OSCacheControl.h> // sys_icache_invalidate için
+#include <dispatch/dispatch.h>      // dispatch_after için
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+uintptr_t get_image_vmaddr_slide() {
+    return _dyld_get_image_vmaddr_slide(0);
+}
 
-jobs:
-  build:
-    runs-on: macos-latest
+uintptr_t calculate_address(uintptr_t offset) {
+    return get_image_vmaddr_slide() + offset;
+}
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+bool apply_patch(uintptr_t offset, std::vector<uint8_t> bytes) {
+    uintptr_t target_addr = calculate_address(offset);
+    size_t size = bytes.size();
 
-      - name: Setup Theos
-        run: |
-          # Eğer önceden kaldıysa temizle ve yeniden kur
-          rm -rf $HOME/theos
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+    // Sistemdeki PAGE_SIZE'ı kullanıyoruz (0x4000 ile aynıdır)
+    uintptr_t page_start = target_addr & ~(vm_page_size - 1);
+    
+    kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)page_start, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    
+    if (kr != KERN_SUCCESS) {
+        return false;
+    }
 
-      - name: Setup iOS SDK
-        run: |
-          # Çakışmayı önlemek için önce klasörü siliyoruz
-          rm -rf $THEOS/sdks
-          git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
+    memcpy((void *)target_addr, bytes.data(), size);
 
-      - name: Build Tweak
-        run: |
-          # Dobby-free temiz derleme
-          make package FINALPACKAGE=1
-          
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: TssBypass-Package
-          path: |
-            packages/*.deb
-            .theos/obj/arm64e/*.dylib
+    vm_protect(mach_task_self(), (vm_address_t)page_start, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    
+    // CPU önbelleğini temizle
+    sys_icache_invalidate((void *)target_addr, size);
+
+    return true;
+}
+
+__attribute__((constructor))
+static void init() {
+    // 2 saniye bekle ve yamayı uygula
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        // Ofsetini buraya yazabilirsin kanka
+        // apply_patch(0x123456, {0xC0, 0x03, 0x5F, 0xD6});
+    });
+}
