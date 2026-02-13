@@ -15,20 +15,23 @@ jobs:
 
       - name: Setup Theos
         run: |
-          # Eğer önceden kaldıysa temizle ve yeniden kur
           rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          # Çakışmayı önlemek için önce klasörü siliyoruz
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
+      - name: Install ldid
+        run: |
+          # ldid indirilip yetkilendiriliyor
+          brew install ldid
+
       - name: Build Tweak
         run: |
-          # Dobby-free temiz derleme
+          # Artık imzalama aşamasında hata almayacak
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
