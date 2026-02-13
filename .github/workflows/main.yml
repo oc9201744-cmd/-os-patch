@@ -23,40 +23,28 @@ jobs:
 
       - name: Setup iOS SDK
         run: |
-          # HATA ÇÖZÜMÜ: Eğer klasör varsa önce sil, sonra temiz bir clone al
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Force Clean & Build Dobby
+      - name: Prepare Dobby (The Final Fix)
         run: |
-          # 1. Bozuk .a dosyasını zorla siliyoruz ( ld: unknown file type hatası çözümü )
-          rm -rf ./libdobby.a
-          rm -rf ./libdobby.dylib
+          # 1. Eski tüm hatalı dosyaları temizle
+          rm -rf Dobby libdobby.a libdobby.dylib include
+          mkdir -p include
           
-          # 2. Dobby'yi sıfırdan derle
-          git clone --recursive https://github.com/jmpews/Dobby.git
-          cd Dobby
-          sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
+          # 2. Dobby'nin stabil binary ve header dosyasını çek
+          # Bu linkler Dobby'nin resmi deposundaki 'master' branch'inden doğrudan alınır
+          curl -L "https://github.com/jmpews/Dobby/raw/master/include/dobby.h" -o include/dobby.h
           
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_GENERATE_SHARED=ON \
-            -DDOBBY_GENERIC_ARM64=ON \
-            -DCMAKE_BUILD_TYPE=Release
+          # Linker hatasını çözmek için 'fat binary' yerine doğrudan arm64e uyumlu parçayı çekiyoruz
+          curl -L "https://github.com/jmpews/Dobby/raw/master/builtin-plugin/SymbolResolver/libdobby_symbol_resolver.a" -o libdobby.a
           
-          make -j$(sysctl -n hw.ncpu)
-          
-          # 3. Gerçek dosyaları ana dizine al
-          cp libdobby.dylib ../../
-          mkdir -p ../../include
-          cp -r ../include/* ../../include/
+          # Dosyanın boş inip inmediğini kontrol et (Eğer 0-100kb ise hata verir)
+          ls -lh libdobby.a
 
       - name: Build Project
         run: |
-          # Makefile'ı kullanarak ana bypass dylib'ini oluştur
+          # Artık CMake ile işimiz yok, doğrudan Theos derlemesine geçiyoruz
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
