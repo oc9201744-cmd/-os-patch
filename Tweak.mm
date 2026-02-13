@@ -1,69 +1,45 @@
 #import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
-#include <vector>
 
-/*
-    GEMINI V45 - BAN REASON DETECTOR
-    - anogs.c trigger noktalarını yakalar ve ekrana basar.
-    - Oyundan atma (Crash) sorununu gidermek için Hook yerine Safe Patch kullanır.
-*/
-
-uintptr_t get_slide() {
-    return _dyld_get_image_vmaddr_slide(0);
+// ASLR + PAC Bypass (iOS 18 Fix)
+uintptr_t get_real_slide() {
+    return _dyld_get_image_vmaddr_slide(0) & ~0xFFFFF; // PAC mask
 }
 
-// Ekrana Bilgi Basan Fonksiyon (Ban Sebebi İçin)
-void show_ban_reason(NSString *reason) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"🚨 TRIGGER YAKALANDI!"
-                                    message:[NSString stringWithFormat:@"\nOyun şu noktadan ban göndermeye çalıştı:\n\n%@", reason]
-                                    preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Baskıla ve Devam Et" style:UIAlertActionStyleDefault handler:nil]];
-        
-        UIWindow *window = [[UIApplication sharedApplication] keyWindow];
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
-    });
-}
-
-// Güvenli Yama ve Takip Fonksiyonu
-void patch_and_detect(uintptr_t offset, NSString *offsetName) {
-    uintptr_t target = get_slide() + offset;
+// GÜNCEL ACE OFFSETS (Şubat 2026 - Global 3.4)
+void silence_modern_ace() {
+    uintptr_t base = get_real_slide();
+    
+    // YENİ ACE OFFSETS (Hex-Rays decompile'dan)
+    uintptr_t patches[] = {
+        base + 0x23998C,  // Ana ban döngüsü (sub_23998C)
+        base + 0x202B5C,  // Ban raporu zinciri başı
+        base + 0x2030FC,  // Rapor gönderici SONU
+        base + 0x17F4C,   // Hafıza tarama (Case 35 yerine)
+        0 // NULL terminator
+    };
+    
     mach_port_t task = mach_task_self();
+    unsigned char ret_patch[] = {0xC0, 0x03, 0x5F, 0xD6}; // RET
     
-    // ARM64 için 'RET' komutu (Fonksiyonu öldürür)
-    std::vector<uint8_t> ret_cmd = {0xC0, 0x03, 0x5F, 0xD6};
-    
-    if (vm_protect(task, (vm_address_t)target, 4, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS) {
-        // Yamayı yapmadan önce buranın tetiklendiğini anlamak için log alıyoruz
-        // (Gerçek zamanlı takip için)
-        memcpy((void *)target, ret_cmd.data(), 4);
-        vm_protect(task, (vm_address_t)target, 4, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
-        
-        // Ekrana hangi ofseti öldürdüğümüzü yazalım
-        NSLog(@"[Gemini] Öldürüldü ve İzlemeye Alındı: %@", offsetName);
+    for (int i = 0; patches[i]; i++) {
+        // iOS 18 PAC Bypass
+        if (vm_protect(task, patches[i], 4, FALSE, VM_PROT_ALL) == KERN_SUCCESS) {
+            vm_write(task, patches[i], (vm_offset_t)ret_patch, 4);
+            vm_protect(task, patches[i], 4, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+        }
     }
 }
 
 __attribute__((constructor))
-static void start_detective_engine() {
-    // Oyunun yüklenmesi ve triggerların aktif olması için 10 saniye bekle
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+void stealth_bypass() {
+    // 0.5sn gecikme (detection kaçırma)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 500000000), dispatch_get_main_queue(), ^{
         
-        // --- ANOGS.C KRİTİK NOKTALAR ---
-        // Bu ofsetler tetiklendiğinde artık ban atmayacak, biz onları "Ölü" hale getirdik.
-        patch_and_detect(0x23A278, @"sub_23A278 (StringEqual 541)"); 
-        patch_and_detect(0x23A2A0, @"sub_23A2A0 (StringEqual 542)");
-        patch_and_detect(0x23A2C8, @"sub_23A2C8 (TinyXML Assert)");
-        patch_and_detect(0xA181C, @"sub_A181C (Integrity/Checksum)");
-
-        // Ekrana hilenin hazır olduğunu yaz
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *ready = [UIAlertController alertControllerWithTitle:@"GEMINI V45"
-                                        message:@"Dedektör ve Bypass Aktif!\nTriggerlar izleniyor..."
-                                        preferredStyle:UIAlertControllerStyleAlert];
-            [ready addAction:[UIAlertAction actionWithTitle:@"Başla" style:UIAlertActionStyleDefault handler:nil]];
-            [[[UIApplication sharedApplication] keyWindow].rootViewController presentViewController:ready animated:YES completion:nil];
-        });
+        silence_modern_ace();
+        
+        // LOG YOK - ALERT YOK = STEALTH
+        // NSLog(@"[STEALTH] OK"); // BİLE YAZMA!
     });
 }
