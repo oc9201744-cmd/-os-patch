@@ -1,41 +1,59 @@
-#include <mach/mach.h>
 #include <mach-o/dyld.h>
-#include <stdint.h>
+#include <mach/mach.h>
+#include <cstdint>
+#include <cstdio>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <vector>
-#include <string.h>
 
-// Bellek yaması yapan fonksiyon
-void patch_memory(uintptr_t address, std::vector<uint8_t> data) {
-    kern_return_t kr;
-    mach_port_t self = mach_task_self();
-    
-    // 1. Bellek sayfasının yazma iznini aç
-    kr = vm_protect(self, (vm_address_t)address, data.size(), FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    if (kr != KERN_SUCCESS) return;
+// iPhone 15 Pro Max (A17 Pro) için 16KB sayfa yapısı
+#define PAGE_SIZE 0x4000 
 
-    // 2. Yeni byte'ları kopyala
-    memcpy((void *)address, data.data(), data.size());
-
-    // 3. İzinleri eski haline getir (Sadece Okuma ve Çalıştırma)
-    vm_protect(self, (vm_address_t)address, data.size(), FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+uintptr_t get_image_vmaddr_slide() {
+    return _dyld_get_image_vmaddr_slide(0);
 }
 
-// Uygulamanın ana modülünün (ASLR dahil) adresini bulur
-uintptr_t get_base_address() {
-    return (uintptr_t)_dyld_get_image_header(0);
+uintptr_t calculate_address(uintptr_t offset) {
+    return get_image_vmaddr_slide() + offset;
+}
+
+// Güvenli Patch Fonksiyonu
+bool apply_patch(uintptr_t offset, std::vector<uint8_t> bytes) {
+    uintptr_t target_addr = calculate_address(offset);
+    size_t size = bytes.size();
+
+    // 1. Sayfayı hizala (Hizalamazsan vm_protect hata verir)
+    uintptr_t page_start = target_addr & ~(PAGE_SIZE - 1);
+    
+    // 2. Bellek korumasını kaldır (Read/Write/Copy)
+    // VM_PROT_COPY zorunludur, aksi halde sistem "yazamazsın" der.
+    kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)page_start, PAGE_SIZE, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    
+    if (kr != KERN_SUCCESS) {
+        return false;
+    }
+
+    // 3. Byte'ları yaz
+    memcpy((void *)target_addr, bytes.data(), size);
+
+    // 4. Korumayı eski haline getir (Read/Execute)
+    vm_protect(mach_task_self(), (vm_address_t)page_start, PAGE_SIZE, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    
+    // 5. Instruction Cache'i temizle (CPU'nun yeni kodu görmesi için şart!)
+    sys_icache_invalidate((void *)target_addr, size);
+
+    return true;
 }
 
 __attribute__((constructor))
 static void init() {
-    // Uygulama başladığında 1 saniye bekle (Hafıza tam yüklenmesi için)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // Uygulamanın tam yüklenmesi için kısa bir gecikme
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
-        uintptr_t base = get_base_address();
-        
-        // ÖRNEK YAMA: 
-        // 0x123456 adresindeki fonksiyonu "return true" yap (arm64 için: RET)
-        // Burayı kendi ofsetlerinle doldurabilirsin
-        // uintptr_t target = base + 0x123456; 
-        // patch_memory(target, {0xC0, 0x03, 0x5F, 0xD6}); 
+        // KULLANIM ÖRNEĞİ:
+        // Offset: 0x1234567, Yazılacaklar: RET (True) -> 0x200080D2 0xC0035FD6 (Little Endian)
+        // if(apply_patch(0x1234567, {0x20, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6})) {
+        //     printf("[TssBypass] Patch Basarili!\n");
+        // }
     });
 }
