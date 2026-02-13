@@ -1,4 +1,4 @@
-name: Build Bypass Dylib arm64e
+name: Build Bypass arm64e
 
 on:
   push:
@@ -15,54 +15,25 @@ jobs:
 
       - name: Setup Theos
         run: |
-          rm -rf $HOME/theos
+          # Theos'u temiz bir şekilde kuruyoruz
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          rm -rf $THEOS/sdks
+          # Sadece gerekli olan SDK'yı çekiyoruz
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Build Dobby (Full Merge)
+      - name: Build Tweak
         run: |
-          rm -rf Dobby
-          git clone --recursive https://github.com/jmpews/Dobby.git
-          cd Dobby
-          sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
-          
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DPlugin.SymbolResolver=OFF \
-            -DCMAKE_BUILD_TYPE=Release
-          
-          # Hepsini derle
-          make dobby_static logging osbase -j$(sysctl -n hw.ncpu)
-          
-          # KRİTİK ADIM: Tüm statik kütüphaneleri TEK BİR DOSYADA birleştir
-          # Bu sayede 'OSMemory' ve 'logging' hataları yok olacak.
-          libtool -static -o ../../libdobby.a \
-            libdobby.a \
-            external/logging/liblogging.a \
-            external/osbase/libosbase.a
-          
-          cd ../..
-          mkdir -p include
-          cp -r Dobby/include/* include/
-
-      - name: Build Project
-        run: |
-          # Artık libdobby.a tam dolu bir paket!
+          # Dobby olmadığı için sadece 'make package' yeterli
+          # arm64e (A12-A17) mimarisi için paketliyoruz
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Bypass-Dylib-iPhone15PM
+          name: TssBypass-Package
           path: |
-            packages/*.dylib
+            packages/*.deb
             .theos/obj/arm64e/*.dylib
