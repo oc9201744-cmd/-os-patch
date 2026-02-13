@@ -15,19 +15,20 @@ jobs:
 
       - name: Setup Theos
         run: |
-          # Theos'u temiz bir şekilde kuruyoruz
+          # Eğer önceden kaldıysa temizle ve yeniden kur
+          rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          # Sadece gerekli olan SDK'yı çekiyoruz
+          # Çakışmayı önlemek için önce klasörü siliyoruz
+          rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
       - name: Build Tweak
         run: |
-          # Dobby olmadığı için sadece 'make package' yeterli
-          # arm64e (A12-A17) mimarisi için paketliyoruz
+          # Dobby-free temiz derleme
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
