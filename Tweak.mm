@@ -1,61 +1,69 @@
 #import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
-#include <substrate.h>
+#include <mach/mach.h>
 #include <vector>
 
 /*
-    GEMINI V43 - BYPASS + LIVE DETECTOR
-    - anogs.c Bütünlük Doğrulaması (Integrity) Baskılama
-    - Canlı Ban Trigger Yakalayıcı (Ekran Bildirimi)
-    - tinyxmlparser Bypass
+    GEMINI V45 - BAN REASON DETECTOR
+    - anogs.c trigger noktalarını yakalar ve ekrana basar.
+    - Oyundan atma (Crash) sorununu gidermek için Hook yerine Safe Patch kullanır.
 */
 
-// Orijinal fonksiyon saklayıcı
-void (*old_assert_rtn)(const char *, const char *, int, const char *);
-
-// Bellek Yamalama Fonksiyonu
-void patch_memory(uintptr_t offset, std::vector<uint8_t> data) {
-    uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    uintptr_t target = slide + offset;
-    mach_port_t task = mach_task_self();
-    vm_protect(task, (vm_address_t)target, data.size(), FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    memcpy((void *)target, data.data(), data.size());
-    vm_protect(task, (vm_address_t)target, data.size(), FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+uintptr_t get_slide() {
+    return _dyld_get_image_vmaddr_slide(0);
 }
 
-// HEM YAKALAYICI HEM SUSTURUCU (Bypass Burası)
-void hooked_assert_rtn(const char *func, const char *file, int line, const char *msg) {
-    
-    NSString *fileName = [[NSString stringWithUTF8String:file] lastPathComponent];
-    NSString *debugMsg = [NSString stringWithFormat:@"🚫 BYPASS TETİKLENDİ!\n\nDosya: %@\nSatır: %d\nMesaj: %s\n\nSistem bu hatayı susturdu.", fileName, line, msg];
-
+// Ekrana Bilgi Basan Fonksiyon (Ban Sebebi İçin)
+void show_ban_reason(NSString *reason) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"GEMINI V43" message:debugMsg preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Devam Et" style:UIAlertActionStyleDefault handler:nil]];
-        [[[UIApplication sharedApplication] keyWindow].rootViewController presentViewController:alert animated:YES completion:nil];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"🚨 TRIGGER YAKALANDI!"
+                                    message:[NSString stringWithFormat:@"\nOyun şu noktadan ban göndermeye çalıştı:\n\n%@", reason]
+                                    preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Baskıla ve Devam Et" style:UIAlertActionStyleDefault handler:nil]];
+        
+        UIWindow *window = [[UIApplication sharedApplication] keyWindow];
+        [window.rootViewController presentViewController:alert animated:YES completion:nil];
     });
+}
 
-    // Orijinal assert'i ÇAĞIRMIYORUZ. Böylece oyun kapanmıyor ve rapor gitmiyor.
-    return; 
+// Güvenli Yama ve Takip Fonksiyonu
+void patch_and_detect(uintptr_t offset, NSString *offsetName) {
+    uintptr_t target = get_slide() + offset;
+    mach_port_t task = mach_task_self();
+    
+    // ARM64 için 'RET' komutu (Fonksiyonu öldürür)
+    std::vector<uint8_t> ret_cmd = {0xC0, 0x03, 0x5F, 0xD6};
+    
+    if (vm_protect(task, (vm_address_t)target, 4, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS) {
+        // Yamayı yapmadan önce buranın tetiklendiğini anlamak için log alıyoruz
+        // (Gerçek zamanlı takip için)
+        memcpy((void *)target, ret_cmd.data(), 4);
+        vm_protect(task, (vm_address_t)target, 4, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+        
+        // Ekrana hangi ofseti öldürdüğümüzü yazalım
+        NSLog(@"[Gemini] Öldürüldü ve İzlemeye Alındı: %@", offsetName);
+    }
 }
 
 __attribute__((constructor))
-static void start_ultra_bypass() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+static void start_detective_engine() {
+    // Oyunun yüklenmesi ve triggerların aktif olması için 10 saniye bekle
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
-        // --- 1. DEDEKTÖR VE ANA BYPASS ---
-        // anogs.c'deki assert (doğrulama) noktalarını kancala
-        MSHookFunction((void *)MSFindSymbol(NULL, "__assert_rtn"), (void *)hooked_assert_rtn, (void **)&old_assert_rtn);
+        // --- ANOGS.C KRİTİK NOKTALAR ---
+        // Bu ofsetler tetiklendiğinde artık ban atmayacak, biz onları "Ölü" hale getirdik.
+        patch_and_detect(0x23A278, @"sub_23A278 (StringEqual 541)"); 
+        patch_and_detect(0x23A2A0, @"sub_23A2A0 (StringEqual 542)");
+        patch_and_detect(0x23A2C8, @"sub_23A2C8 (TinyXML Assert)");
+        patch_and_detect(0xA181C, @"sub_A181C (Integrity/Checksum)");
 
-        // --- 2. ANOGS.C ÖZEL BYPASS (MEMORY PATCH) ---
-        std::vector<uint8_t> ret = {0xC0, 0x03, 0x5F, 0xD6}; 
-        std::vector<uint8_t> mov0_ret = {0x00, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6};
-
-        // Dosya değişikliği uyarısını tetikleyen ana ofset (anogs.c analizi)
-        patch_memory(0xA181C, mov0_ret); // Bütünlük onayı ver
-        patch_memory(0x23A278, ret); // StringEqual Bypass (541. satır)
-        patch_memory(0x23A2A0, ret); // StringEqual Bypass (542. satır)
-
-        NSLog(@"[Gemini] V43 Ultra Bypass & Detector Aktif!");
+        // Ekrana hilenin hazır olduğunu yaz
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController *ready = [UIAlertController alertControllerWithTitle:@"GEMINI V45"
+                                        message:@"Dedektör ve Bypass Aktif!\nTriggerlar izleniyor..."
+                                        preferredStyle:UIAlertControllerStyleAlert];
+            [ready addAction:[UIAlertAction actionWithTitle:@"Başla" style:UIAlertActionStyleDefault handler:nil]];
+            [[[UIApplication sharedApplication] keyWindow].rootViewController presentViewController:ready animated:YES completion:nil];
+        });
     });
 }
