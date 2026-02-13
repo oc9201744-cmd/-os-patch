@@ -1,4 +1,4 @@
-name: Build Bypass Dylib
+name: Build Bypass Dylib arm64e
 
 on:
   push:
@@ -17,7 +17,6 @@ jobs:
 
       - name: Setup Theos
         run: |
-          # Mevcut dizini temizle ve Theos'u kur
           sudo rm -rf /opt/theos
           sudo mkdir -p /opt/theos
           sudo chown -R $USER /opt/theos
@@ -26,33 +25,35 @@ jobs:
 
       - name: Setup iOS SDK
         run: |
-          # SDK klasörünü temizle ve iOS 16/17 uyumlu SDK'ları çek
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Install Dobby Library
+      - name: Build Dobby for arm64e
         run: |
-          # Dobby kütüphanesini indir ve arm64e için hazırla
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby && mkdir build && cd build
-          cmake .. -DDOBBY_GENERATE_SHARED=ON -DARCHS=arm64e
+          # iPhone 15 Pro Max için arm64e mimarisinde derleme komutu
+          cmake .. \
+            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
+            -DDOBBY_GENERATE_SHARED=ON \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DDOBBY_DEBUG=OFF
           make -j$(sysctl -n hw.ncpu)
-          # Makefile'ın görebilmesi için ana dizine kopyala
+          # Çıktıları ana dizine taşı
           cp libdobby.dylib ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Makefile kullanarak dylib derlemesi yap
-          export THEOS_DEVICE_IP=localhost
+          # Theos ile ana projeyi derle
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Bypass-Dylib-Output
+          name: Bypass-Dylib-arm64e
           path: |
             packages/*.dylib
-            packages/*.deb
-            .theos/obj/*.dylib
+            .theos/obj/arm64e/*.dylib
