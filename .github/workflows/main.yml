@@ -21,18 +21,22 @@ jobs:
 
       - name: Setup iOS SDK
         run: |
+          rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Auto-Fetch and Build Dobby
+      - name: Auto-Build Dobby from GitHub
         run: |
-          # 1. Dobby'yi GitHub'dan otomatik indir (Senin yüklemene gerek kalmadı)
+          # 1. Bozuk dosyaları temizle (Önemli!)
+          rm -f ./libdobby.a ./libdobby.dylib
+          
+          # 2. Linkini verdiğin depoyu klonla
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby
           
-          # 2. Hata veren kontrolü YAML içinde otomatik siliyoruz
+          # 3. İşlemci kontrolü hatasını yamala
           sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
-          # 3. iPhone 15 Pro Max (arm64e) için derle
+          # 4. arm64e (iPhone 15 PM) için derle
           mkdir build && cd build
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
@@ -44,14 +48,14 @@ jobs:
           
           make -j$(sysctl -n hw.ncpu)
           
-          # 4. Derlenen dosyaları Theos'un göreceği ana dizine çıkar
+          # 5. Sonuçları ana dizine kopyala
           cp libdobby.dylib ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Senin TssBypass.cpp dosyanı şimdi derleyebiliriz
+          # Şimdi senin TssBypass.cpp dosyanı derleme vakti
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
