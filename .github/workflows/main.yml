@@ -23,20 +23,21 @@ jobs:
 
       - name: Setup iOS SDK
         run: |
+          # HATA ÇÖZÜMÜ: Eğer klasör varsa önce sil, sonra temiz bir clone al
+          rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
       - name: Force Clean & Build Dobby
         run: |
-          # 1. BOZUK DOSYAYI SİSTEMDEN KAZIYORUZ
+          # 1. Bozuk .a dosyasını zorla siliyoruz ( ld: unknown file type hatası çözümü )
           rm -rf ./libdobby.a
           rm -rf ./libdobby.dylib
           
-          # 2. Dobby'yi sıfırdan çek ve hata veren kısımları yamala
+          # 2. Dobby'yi sıfırdan derle
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby
           sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
-          # 3. iPhone 15 Pro Max (arm64e) için derle
           mkdir build && cd build
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
@@ -48,14 +49,14 @@ jobs:
           
           make -j$(sysctl -n hw.ncpu)
           
-          # 4. Derlenen gerçek kütüphaneyi ana dizine kopyala
+          # 3. Gerçek dosyaları ana dizine al
           cp libdobby.dylib ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Artık ortam temiz, derleme başarılı olacak
+          # Makefile'ı kullanarak ana bypass dylib'ini oluştur
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
