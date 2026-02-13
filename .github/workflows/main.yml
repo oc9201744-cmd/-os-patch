@@ -13,7 +13,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Theos (Home Directory)
+      - name: Setup Theos (Clean Home Install)
         run: |
           rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
@@ -24,25 +24,41 @@ jobs:
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Inject Pre-built Dobby
+      - name: Build Dobby (Disable Broken Plugin)
         run: |
-          # Eski kalıntıları temizle
-          rm -rf include libdobby.a
-          mkdir -p include
+          # 1. Başımızı ağrıtan eski bozuk dosyayı sil (Çok Önemli!)
+          rm -f ./libdobby.a ./libdobby.dylib
+          rm -rf Dobby
           
-          # 1. Dobby'nin header (başlık) dosyasını indir
-          curl -L "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
+          # 2. Dobby'yi indir
+          git clone --recursive https://github.com/jmpews/Dobby.git
+          cd Dobby
           
-          # 2. Dobby'nin derlenmiş ARM64/ARM64E kütüphanesini indir
-          # Not: Bu dosya doğrudan binary olduğu için ld hatası vermez
-          curl -L "https://github.com/jmpews/Dobby/raw/master/builtin-plugin/SymbolResolver/libdobby_symbol_resolver.a" -o libdobby.a
+          # 3. İşlemci kontrolü hatasını temizle
+          sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
-          # Dosyanın gerçekliğini doğrula (HTML değil binary olmalı)
-          file libdobby.a
+          # 4. Derleme Ayarları: SORUNLU EKLENTİYİ KAPATIYORUZ (-DPlugin.SymbolResolver=OFF)
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DDOBBY_GENERATE_SHARED=ON \
+            -DDOBBY_GENERIC_ARM64=ON \
+            -DPlugin.SymbolResolver=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          
+          # 5. Derle (Hata vermeden bitmeli)
+          make -j$(sysctl -n hw.ncpu)
+          
+          # 6. Çıkan sağlam dosyayı ana dizine taşı
+          cp libdobby.dylib ../../
+          mkdir -p ../../include
+          cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Theos ile derlemeyi başlat (Artık libdobby.a hazır ve nazır)
+          # Artık elimizde gerçek bir .dylib var, Linker hata vermeyecek
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
