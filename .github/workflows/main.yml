@@ -1,52 +1,48 @@
-name: build
-on: [push, workflow_dispatch]
+name: Build Bypass Dylib
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # Manuel olarak başlatma butonu ekler
 
 jobs:
-  build_job:
+  build:
     runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Install Tools
-        run: brew install ldid dpkg
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # Dobby veya diğer alt modülleri çekmek için
 
       - name: Setup Theos
         run: |
-          # 1. Theos'u indir
-          git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
+          sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
+          echo "THEOS=/opt/theos" >> $GITHUB_ENV
           
-          # 2. ÇAKIŞMAYI ÖNLEMEK İÇİN VAR OLAN 'sdks' KLASÖRÜNÜ SİLİYORUZ
-          rm -rf $GITHUB_WORKSPACE/theos/sdks
-          
-          # 3. Şimdi temiz alana SDK'ları indiriyoruz
-          git clone --depth 1 https://github.com/theos/sdks.git $GITHUB_WORKSPACE/theos/sdks
-          
-          # 4. Substrate kütüphanesini ayarla
-          curl -LO https://github.com/theos/sdks/raw/master/CydiaSubstrate.tbd
-          cp CydiaSubstrate.tbd $GITHUB_WORKSPACE/theos/lib/libsubstrate.tbd
-
-      - name: Create Config Files
+      - name: Setup SDK (iOS 17+)
         run: |
-          cat <<EOF > control
-          Package: com.gemini.antiban
-          Name: antibanpatch
-          Version: 1.0.0
-          Architecture: iphoneos-arm
-          Maintainer: Gemini
-          Depends: mobilesubstrate
-          EOF
-          cat <<EOF > antibanpatch.plist
-          { Filter = { Bundles = ( "com.tencent.ig" ); }; }
-          EOF
-
-      - name: Build Package
+          # Jailed iOS 17/18 için SDK indirilir
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
+          
+      - name: Install Dobby Library
         run: |
-          export THEOS=$GITHUB_WORKSPACE/theos
-          make clean package FINALPACKAGE=1
+          # Dobby kütüphanesini projeye dahil eder
+          git clone --recursive https://github.com/jmpews/Dobby.git
+          cd Dobby && mkdir build && cd build
+          cmake .. -DDOBBY_GENERATE_SHARED=ON -DARCHS=arm64e
+          make -j$(sysctl -n hw.ncpu)
+          cp libdobby.dylib ../../
+          cp -r ../include ../../
 
-      - name: Upload Artifact
+      - name: Build Project
+        run: |
+          # Makefile üzerinden derleme işlemi başlatılır
+          export THEOS_DEVICE_IP=localhost
+          make package FINALPACKAGE=1
+          
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Antiban-Deb
-          path: packages/*.deb
+          name: Bypass-Dylib
+          path: packages/*.dylib # Veya .deb dosyan
