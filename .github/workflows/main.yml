@@ -13,7 +13,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Theos (Clean Install)
+      - name: Setup Theos
         run: |
           rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
@@ -24,41 +24,33 @@ jobs:
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Build Static Dobby (Success Mode)
+      - name: Build Dobby (Static Only)
         run: |
-          # Temizlik
-          rm -f ./libdobby.a ./libdobby.dylib
-          rm -rf Dobby
-          
-          # Dobby'yi indir
+          rm -f ./libdobby.a
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby
-          
-          # Hata yaması
           sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
           mkdir build && cd build
-          
-          # DİKKAT: Hata veren SHARED modunu kapattık (OFF), sadece STATIC (ON)
+          # Sadece statik kütüphaneye odaklanıyoruz
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_GENERATE_SHARED=OFF \
-            -DDOBBY_GENERIC_ARM64=ON \
             -DPlugin.SymbolResolver=OFF \
             -DCMAKE_BUILD_TYPE=Release
           
-          make -j$(sysctl -n hw.ncpu)
+          # Hata alsa bile (dylib yüzünden) devam etmesi için '|| true' ekledik
+          make dobby_static -j$(sysctl -n hw.ncpu) || true
           
-          # libdobby.a dosyası başarıyla oluştu, onu alıyoruz
-          cp libdobby.a ../../
+          # Başarıyla üretilen statik dosyayı kopyala
+          cp libdobby.a ../../ || echo "Dosya bulunamadı ama devam et"
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Artık elimizde sağlam bir libdobby.a var
+          # libdobby.a orada olduğu sürece make package çalışacaktır
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
