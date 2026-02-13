@@ -1,25 +1,14 @@
-# Mimari ve Hedef Sürüm
-ARCHS = arm64
-TARGET = iphone:clang:latest:14.0
+# Projenin adı
+LIBRARY_NAME = TssBypass
 
-# Hata ayıklama modunu kapat, son paket modunu aç
-DEBUG = 0
-FINALPACKAGE = 1
+# Hedef Mimari (iPhone 15 Pro Max için arm64e şart)
+ARCHS = arm64e
+TARGET = iphone:clang:latest:15.0
 
 include $(THEOS)/makefiles/common.mk
 
-# Tweak Adı (Plist ve Control dosyasıyla uyumlu olmalı)
-TWEAK_NAME = antibanpatch
+TssBypass_FILES = TssBypass.cpp
+TssBypass_CFLAGS = -fobjc-arc -I./include
+TssBypass_LDFLAGS = -L./ -ldobby
 
-# Derlenecek dosyalar
-antibanpatch_FILES = Tweak.mm
-
-# Gerekli Kütüphaneler
-antibanpatch_LIBRARIES = substrate
-antibanpatch_FRAMEWORKS = UIKit Foundation
-
-# C++11 Standartları ve Uyarı Engelleme (Memory Patch için kritik)
-antibanpatch_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -std=c++11
-antibanpatch_CCFLAGS = -std=c++11
-
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS_MAKE_PATH)/library.mk
