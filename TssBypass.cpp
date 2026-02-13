@@ -1,67 +1,41 @@
-#include <iostream>
-#include <stdint.h>
+#include <mach/mach.h>
 #include <mach-o/dyld.h>
-#include <dlfcn.h>
+#include <stdint.h>
+#include <vector>
 #include <string.h>
 
-// Dobby'nin içindeki hatalı include yapısını aşmak için 
-// önce standart kütüphaneleri dışarıda çağırıyoruz
-#include <stdint.h>
-#include <sys/types.h>
+// Bellek yaması yapan fonksiyon
+void patch_memory(uintptr_t address, std::vector<uint8_t> data) {
+    kern_return_t kr;
+    mach_port_t self = mach_task_self();
+    
+    // 1. Bellek sayfasının yazma iznini aç
+    kr = vm_protect(self, (vm_address_t)address, data.size(), FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    if (kr != KERN_SUCCESS) return;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-    // Dobby fonksiyonlarını manuel tanımlayalım (Header hatasını aşmak için en temiz yol)
-    int DobbyHook(void *address, void *replace_call, void **origin_call);
-#ifdef __cplusplus
-}
-#endif
+    // 2. Yeni byte'ları kopyala
+    memcpy((void *)address, data.data(), data.size());
 
-// --- YARDIMCI FONKSİYONLAR ---
-
-// PAC (Pointer Authentication) Temizleme - iPhone 15 Pro Max için hayati
-uintptr_t strip_pac_signature(uintptr_t addr) {
-    return addr & 0x0000000FFFFFFFFF;
+    // 3. İzinleri eski haline getir (Sadece Okuma ve Çalıştırma)
+    vm_protect(self, (vm_address_t)address, data.size(), FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
 }
 
-uintptr_t get_main_module_base() {
-    return _dyld_get_image_vmaddr_slide(0);
+// Uygulamanın ana modülünün (ASLR dahil) adresini bulur
+uintptr_t get_base_address() {
+    return (uintptr_t)_dyld_get_image_header(0);
 }
 
-// --- ORIGINALS ---
-static void* (*orig_TssDispatcher)(void* a1, void* a2, void* a3);
-static int (*orig_CheckEnvironment)(void* a1);
-
-// --- HOOKS ---
-void* fake_TssDispatcher(void* a1, void* a2, void* a3) {
-    // Gerçekçi Trampoline: Orijinal fonksiyonu çağırıp registerları koruyoruz
-    return orig_TssDispatcher(a1, a2, a3);
-}
-
-int fake_CheckEnvironment(void* a1) {
-    // Jailbreak/Hile tespitini kandır
-    return 0; 
-}
-
-// --- ANA KURULUM ---
 __attribute__((constructor))
-static void initialize_bypass() {
-    uintptr_t base_address = get_main_module_base();
-    
-    // Pubg.txt Analiz Ofsetleri
-    uintptr_t offset_dispatcher = 0x10878;  
-    uintptr_t offset_env_check = 0xD06B8;   
-    
-    uintptr_t target_dispatcher = strip_pac_signature(base_address + offset_dispatcher);
-    uintptr_t target_env_check = strip_pac_signature(base_address + offset_env_check);
-
-    // RS_SUCCESS hatasını aşmak için doğrudan 0 (Başarı) kontrolü yapıyoruz
-    if (DobbyHook((void*)target_dispatcher, (void*)fake_TssDispatcher, (void**)&orig_TssDispatcher) == 0) {
-        // Başarılı
-    }
-
-    if (DobbyHook((void*)target_env_check, (void*)fake_CheckEnvironment, (void**)&orig_CheckEnvironment) == 0) {
-        // Başarılı
-    }
+static void init() {
+    // Uygulama başladığında 1 saniye bekle (Hafıza tam yüklenmesi için)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        uintptr_t base = get_base_address();
+        
+        // ÖRNEK YAMA: 
+        // 0x123456 adresindeki fonksiyonu "return true" yap (arm64 için: RET)
+        // Burayı kendi ofsetlerinle doldurabilirsin
+        // uintptr_t target = base + 0x123456; 
+        // patch_memory(target, {0xC0, 0x03, 0x5F, 0xD6}); 
+    });
 }
