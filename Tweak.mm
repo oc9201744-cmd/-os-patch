@@ -1,44 +1,39 @@
 #import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
+#include <mach/mach.h>
 #include <substrate.h>
 
 /*
-    GEMINI V63 - VISUAL SURVIVAL EDITION
-    - Ekranda "Hile aktif edildi" uyarısı verir.
-    - Flag/Bayrak sonrası hayatta kalma (v9) aktif.
-    - 60 saniye gecikmeli aktivasyon.
+    GEMINI V63 - FAST MEMORY PATCH
+    - Aktivasyon süresi: 10 Saniye
+    - Hex Patch: 20 00 80 d2 c0 03 5f d6 (mov x0, #1; ret)
+    - Görsel ve Sistem logu uyarılı.
 */
 
-// Orijinal fonksiyonlar
-static void* (*orig_case35)(void*);
-static int   (*orig_report)(void*);
-static void* (*orig_syscall)(void*, void**, unsigned long, void*);
-
-// Flag Survival (Oldmonk) Mantığı
-void* h_survival_check(void* a1) {
-    if (!a1) return 0;
-    void* v1 = *(void**)((uintptr_t)a1 + 0x108); 
-    if (!v1) return (void*)0;
-    void* v13 = *(void**)((uintptr_t)a1 + 0x110); 
-    if (!v13) return (void*)0;
-    void* v9 = *(void**)((uintptr_t)v13 + 0x1D0); 
-    return v9; 
+// --- BELLEK YAZMA FONKSİYONU ---
+void patch_memory(uintptr_t address, uint8_t *data, size_t size) {
+    mach_port_t task = mach_task_self();
+    
+    // Bellek korumasını yazılabilir hale getir (RWX)
+    vm_protect(task, (vm_address_t)address, size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    
+    // Yamayı uygula
+    memcpy((void *)address, data, size);
+    
+    // Korumayı eski haline döndür (RX)
+    vm_protect(task, (vm_address_t)address, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    
+    // CPU önbelleğini temizle
+    sys_icache_invalidate((void *)address, size);
 }
 
-// Rapor Susturucu
-int h_sub_F012C(void* a1) { return 0; }
-
-// Sistem İzleyici
-void* h_sub_F838C(void* a1, void** a2, unsigned long a3, void* a4) {
-    return orig_syscall(a1, a2, a3, a4);
-}
-
-// --- GÖRSEL UYARI FONKSİYONU ---
+// --- GÖRSEL UYARI (UI ALERT) ---
 void show_gemini_alert() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"GEMINI BYPASS"
-                                    message:@"Hile aktif edildi!\nSurvival Modu Devrede."
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"GEMINI V63"
+                                    message:@"Yama 10 saniye sonunda başarıyla uygulandı!\nDurum: Aktif (Survival On)"
                                     preferredStyle:UIAlertControllerStyleAlert];
+        
         [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
         
         UIWindow *window = nil;
@@ -56,24 +51,30 @@ void show_gemini_alert() {
     });
 }
 
+// --- ANA MOTOR ---
 __attribute__((constructor))
 static void start_engine() {
-    // 60 saniye bekle (Lobi ve sunucu trafiği için)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // Gecikme süresi: 10 saniye (10.0 * NSEC_PER_SEC)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
         
         if (slide > 0) {
-            // Hookları tak
-            MSHookFunction((void *)(slide + 0x17998), (void *)&h_survival_check, (void **)&orig_case35);
-            MSHookFunction((void *)(slide + 0xF012C), (void *)&h_sub_F012C, (void **)&orig_report);
-            MSHookFunction((void *)(slide + 0xF838C), (void *)&h_sub_F838C, (void **)&orig_syscall);
+            // Senin istediğin hex dizisi: mov x0, #1; ret
+            uint8_t patch_hex[] = {0x20, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6};
+            
+            // Hedef adreslere yamayı bas
+            patch_memory(slide + 0x17998, patch_hex, sizeof(patch_hex)); // Survival Check
+            patch_memory(slide + 0xF012C, patch_hex, sizeof(patch_hex)); // Report Silencer
+            patch_memory(slide + 0xF838C, patch_hex, sizeof(patch_hex)); // Syscall Watcher
 
-            // Ekrana yazıyı bas
+            // Ekrana bildirimi bas
             show_gemini_alert();
             
-            // Loglara da yaz (Garanti olsun)
-            NSLog(@"[GEMINI] Hile aktif edildi!");
+            // Console loguna yaz (Hata ayıklama için)
+            NSLog(@"[GEMINI] 10 saniye doldu. Patch adreslere enjekte edildi.");
+        } else {
+            NSLog(@"[GEMINI] Hata: Slide adresi bulunamadı!");
         }
     });
 }
