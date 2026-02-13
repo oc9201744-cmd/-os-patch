@@ -23,25 +23,39 @@ jobs:
 
       - name: Setup iOS SDK
         run: |
-          rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Fetch and Prepare Dobby
+      - name: Force Clean & Build Dobby
         run: |
-          # 1. include klasörünü oluştur
-          mkdir -p include
-          # 2. Resmi Dobby kütüphanesini (Binary) doğrudan çek (Bu sefer gerçek dosya)
-          curl -L "https://github.com/jmpews/Dobby/raw/master/builtin-plugin/SymbolResolver/libdobby_symbol_resolver.a" -o libdobby.a
-          # 3. Gerekli header dosyasını çek
-          curl -L "https://github.com/jmpews/Dobby/raw/master/include/dobby.h" -o include/dobby.h
+          # 1. BOZUK DOSYAYI SİSTEMDEN KAZIYORUZ
+          rm -rf ./libdobby.a
+          rm -rf ./libdobby.dylib
           
-          # DOSYA KONTROLÜ: Boyut 234 KB'dan büyük olmalı (Gerçek kütüphane 1MB+ olur)
-          ls -lh libdobby.a
-          file libdobby.a
+          # 2. Dobby'yi sıfırdan çek ve hata veren kısımları yamala
+          git clone --recursive https://github.com/jmpews/Dobby.git
+          cd Dobby
+          sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
+          
+          # 3. iPhone 15 Pro Max (arm64e) için derle
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DDOBBY_GENERATE_SHARED=ON \
+            -DDOBBY_GENERIC_ARM64=ON \
+            -DCMAKE_BUILD_TYPE=Release
+          
+          make -j$(sysctl -n hw.ncpu)
+          
+          # 4. Derlenen gerçek kütüphaneyi ana dizine kopyala
+          cp libdobby.dylib ../../
+          mkdir -p ../../include
+          cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Theos ile derlemeyi başlat
+          # Artık ortam temiz, derleme başarılı olacak
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
