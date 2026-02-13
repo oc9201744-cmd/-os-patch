@@ -6,6 +6,7 @@ include $(THEOS)/makefiles/common.mk
 LIBRARY_NAME = TssBypass
 TssBypass_FILES = TssBypass.cpp
 TssBypass_CFLAGS = -fobjc-arc -I./include
+# -all_load ile her şeyi içeri alıyoruz
 TssBypass_LDFLAGS = -L./ -ldobby -Wl,-all_load
 
 include $(THEOS_MAKE_PATH)/library.mk
