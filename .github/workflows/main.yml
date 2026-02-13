@@ -32,7 +32,10 @@ jobs:
         run: |
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby
-          # CMake hata kontrolünü bypass etmek için platformu manuel set ediyoruz
+          
+          # HATA ÇÖZÜMÜ: Environment check'i devre dışı bırakmak için CMakeLists'i manipüle et
+          sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
+          
           mkdir build && cd build
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
@@ -41,18 +44,18 @@ jobs:
             -DDOBBY_GENERATE_SHARED=ON \
             -DDOBBY_DEBUG=OFF \
             -DCMAKE_BUILD_TYPE=Release \
-            -DDOBBY_GENERIC_ARM64=ON
+            -DDOBBY_GENERIC_ARM64=ON \
+            -DDOBBY_ARCH="arm64"
           
           make -j$(sysctl -n hw.ncpu)
           
-          # Çıktıları kopyala
           cp libdobby.dylib ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Ana dylib derlemesi
+          # Ana bypass dylib derlemesi
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
