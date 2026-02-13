@@ -24,33 +24,38 @@ jobs:
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Build Dobby (Static Only)
+      - name: Build Dobby Correct Way
         run: |
           rm -f ./libdobby.a
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby
+          
+          # iOS sürümünü Tweak ile eşitlemek için yamalıyoruz
           sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
           mkdir build && cd build
-          # Sadece statik kütüphaneye odaklanıyoruz
+          # ÖNEMLİ: CMAKE_OSX_DEPLOYMENT_TARGET=15.0 ekledik
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DPlugin.SymbolResolver=OFF \
             -DCMAKE_BUILD_TYPE=Release
           
-          # Hata alsa bile (dylib yüzünden) devam etmesi için '|| true' ekledik
-          make dobby_static -j$(sysctl -n hw.ncpu) || true
+          # Sadece dobby_static değil, tüm kütüphaneyi derle
+          make -j$(sysctl -n hw.ncpu)
           
-          # Başarıyla üretilen statik dosyayı kopyala
-          cp libdobby.a ../../ || echo "Dosya bulunamadı ama devam et"
+          # Tüm statik kütüphaneleri (logging, osbase vb.) birleştirmemiz gerekebilir
+          # Ama önce ana kütüphaneyi alalım
+          cp libdobby.a ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # libdobby.a orada olduğu sürece make package çalışacaktır
+          # Eksik sembolleri önlemek için Linker'a tüm objeleri dahil etmesini söylüyoruz
+          export LDFLAGS="-Wl,-all_load"
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
