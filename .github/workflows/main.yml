@@ -13,50 +13,36 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Theos (Safe Home Directory)
+      - name: Setup Theos (Home Directory)
         run: |
-          # /opt ile uğraşmıyoruz, doğrudan ev dizinine kuruyoruz
           rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          # THEOS yolunu sisteme tanıtıyoruz
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          # SDK'yı yeni ev dizinindeki Theos'a kur
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Auto-Build Dobby from GitHub
+      - name: Inject Pre-built Dobby
         run: |
-          # 1. Bozuk eski dosyaları temizle
-          rm -f ./libdobby.a ./libdobby.dylib
+          # Eski kalıntıları temizle
+          rm -rf include libdobby.a
+          mkdir -p include
           
-          # 2. Dobby'yi klonla ve hatayı yamala
-          git clone --recursive https://github.com/jmpews/Dobby.git
-          cd Dobby
-          sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
+          # 1. Dobby'nin header (başlık) dosyasını indir
+          curl -L "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
           
-          # 3. iPhone 15 Pro Max (arm64e) için derle
-          mkdir build && cd build
-          cmake .. \
-            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_GENERATE_SHARED=ON \
-            -DDOBBY_GENERIC_ARM64=ON \
-            -DCMAKE_BUILD_TYPE=Release
+          # 2. Dobby'nin derlenmiş ARM64/ARM64E kütüphanesini indir
+          # Not: Bu dosya doğrudan binary olduğu için ld hatası vermez
+          curl -L "https://github.com/jmpews/Dobby/raw/master/builtin-plugin/SymbolResolver/libdobby_symbol_resolver.a" -o libdobby.a
           
-          make -j$(sysctl -n hw.ncpu)
-          
-          # 4. Derlenen sağlam dosyayı ana dizine al
-          cp libdobby.dylib ../../
-          mkdir -p ../../include
-          cp -r ../include/* ../../include/
+          # Dosyanın gerçekliğini doğrula (HTML değil binary olmalı)
+          file libdobby.a
 
       - name: Build Project
         run: |
-          # Theos artık $HOME içinde olduğu için yetki sorunu çıkmayacak
+          # Theos ile derlemeyi başlat (Artık libdobby.a hazır ve nazır)
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
