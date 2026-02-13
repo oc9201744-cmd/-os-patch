@@ -1,9 +1,9 @@
-Package: com.seninadın.tssbypass
+Package: com.seninadin.tssbypass
 Name: TssBypass
 Depends: mobilesubstrate
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Dobby-free Memory Patch Bypass
-Maintainer: Sen
-Author: Sen
+Description: Ace SDK Bypass for A17 Pro
+Maintainer: seninadin
+Author: seninadin
 Section: Tweaks
