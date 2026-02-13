@@ -13,7 +13,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Theos (Clean Home Install)
+      - name: Setup Theos (Clean Install)
         run: |
           rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
@@ -24,41 +24,41 @@ jobs:
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Build Dobby (Disable Broken Plugin)
+      - name: Build Static Dobby (Success Mode)
         run: |
-          # 1. Başımızı ağrıtan eski bozuk dosyayı sil (Çok Önemli!)
+          # Temizlik
           rm -f ./libdobby.a ./libdobby.dylib
           rm -rf Dobby
           
-          # 2. Dobby'yi indir
+          # Dobby'yi indir
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby
           
-          # 3. İşlemci kontrolü hatasını temizle
+          # Hata yaması
           sed -i '' 's/include(cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
-          # 4. Derleme Ayarları: SORUNLU EKLENTİYİ KAPATIYORUZ (-DPlugin.SymbolResolver=OFF)
           mkdir build && cd build
+          
+          # DİKKAT: Hata veren SHARED modunu kapattık (OFF), sadece STATIC (ON)
           cmake .. \
             -DCMAKE_OSX_ARCHITECTURES="arm64e" \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_GENERATE_SHARED=ON \
+            -DDOBBY_GENERATE_SHARED=OFF \
             -DDOBBY_GENERIC_ARM64=ON \
             -DPlugin.SymbolResolver=OFF \
             -DCMAKE_BUILD_TYPE=Release
           
-          # 5. Derle (Hata vermeden bitmeli)
           make -j$(sysctl -n hw.ncpu)
           
-          # 6. Çıkan sağlam dosyayı ana dizine taşı
-          cp libdobby.dylib ../../
+          # libdobby.a dosyası başarıyla oluştu, onu alıyoruz
+          cp libdobby.a ../../
           mkdir -p ../../include
           cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Artık elimizde gerçek bir .dylib var, Linker hata vermeyecek
+          # Artık elimizde sağlam bir libdobby.a var
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
