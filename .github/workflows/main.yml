@@ -26,25 +26,31 @@ jobs:
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Prepare Dobby (The Final Fix)
+      - name: Prepare Dobby Without CMake
         run: |
-          # 1. Eski tüm hatalı dosyaları temizle
+          # Önceki tüm bozuk dosyaları imha et
           rm -rf Dobby libdobby.a libdobby.dylib include
+          
+          # Dobby'yi klonla
+          git clone --recursive https://github.com/jmpews/Dobby.git
+          
+          # Header dosyalarını ayarla
           mkdir -p include
+          cp Dobby/include/dobby.h include/
           
-          # 2. Dobby'nin stabil binary ve header dosyasını çek
-          # Bu linkler Dobby'nin resmi deposundaki 'master' branch'inden doğrudan alınır
-          curl -L "https://github.com/jmpews/Dobby/raw/master/include/dobby.h" -o include/dobby.h
+          # Kritik: Dobby'nin önceden derlenmiş (gerçek) kütüphanesini 
+          # GitHub'ın 'raw' kısıtlamasına takılmadan depodan çıkarıyoruz
+          find Dobby -name "libdobby_static.a" -exec cp {} ./libdobby.a \; || true
           
-          # Linker hatasını çözmek için 'fat binary' yerine doğrudan arm64e uyumlu parçayı çekiyoruz
-          curl -L "https://github.com/jmpews/Dobby/raw/master/builtin-plugin/SymbolResolver/libdobby_symbol_resolver.a" -o libdobby.a
-          
-          # Dosyanın boş inip inmediğini kontrol et (Eğer 0-100kb ise hata verir)
-          ls -lh libdobby.a
+          # Eğer yukarıdaki bulamazsa, sembol çözücüyü al (en garantisi)
+          if [ ! -f libdobby.a ]; then
+            find Dobby -name "*dobby*.a" -exec cp {} ./libdobby.a \;
+          fi
 
       - name: Build Project
         run: |
-          # Artık CMake ile işimiz yok, doğrudan Theos derlemesine geçiyoruz
+          # Linker'ın hata vermemesi için dosyanın tipini kontrol et ve derle
+          file libdobby.a
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
