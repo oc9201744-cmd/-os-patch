@@ -1,52 +1,46 @@
 #import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
-#include <substrate.h>
+#include <mach/mach.h>
 
 /*
-    GEMINI V47.1 - FIXED BUILD
-    - Unused variable hatası giderildi.
-    - NSMutableDictionary kancası eklendi.
-    - anogs.c çökme noktaları kancalandı.
+    GEMINI V52 - SHADOW EDITION
+    - No UI (Görsel iz bırakmaz)
+    - Stealth Memory Patch (memcpy yöntemi)
+    - Extended Delay (30 saniye kuralı)
 */
 
-// Dosya okuma hatasını yakalayan kanca (Loglardaki çökme için)
-static id (*old_dict_init)(id, SEL, NSString *);
-id hooked_dict_init(id self, SEL _cmd, NSString *path) {
-    if (path && [path containsString:@"ShadowTrackerExtra"]) {
-        NSLog(@"[Gemini] Dosya Okunuyor: %@", [path lastPathComponent]);
-    }
-    return old_dict_init(self, _cmd, path);
+uintptr_t get_slide() {
+    return _dyld_get_image_vmaddr_slide(0);
 }
 
-// Ban sebebini ekrana basan Exception Handler
-void handle_exception(NSException *exception) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"GEMINI DEDEKTÖR" 
-                                    message:[exception reason] 
-                                    preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Kapat" style:UIAlertActionStyleDefault handler:nil]];
-        [[[UIApplication sharedApplication] keyWindow].rootViewController presentViewController:alert animated:YES completion:nil];
-    });
+// Daha güvenli yama yöntemi
+void ghost_patch(uintptr_t offset) {
+    uintptr_t target = get_slide() + offset;
+    unsigned char patch[] = {0xC0, 0x03, 0x5F, 0xD6}; 
+    
+    mach_port_t task = mach_task_self();
+    // vm_write yerine memcpy + vm_protect kullanıyoruz (Daha sessizdir)
+    if (vm_protect(task, (vm_address_t)target, 4, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) == KERN_SUCCESS) {
+        memcpy((void *)target, patch, 4);
+        vm_protect(task, (vm_address_t)target, 4, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+        // Logu sadece 3uTools'a bas, ekrana değil!
+        NSLog(@"[Ghost] Patched: 0x%lx", offset);
+    }
 }
 
 __attribute__((constructor))
 static void start_engine() {
-    // 1. Objective-C Hata Yakalayıcı
-    NSSetUncaughtExceptionHandler(&handle_exception);
-
-    // 2. NSMutableDictionary Kancası
-    MSHookMessageEx([NSMutableDictionary class], @selector(initWithContentsOfFile:), (IMP)hooked_dict_init, (IMP *)&old_dict_init);
-
-    // 3. anogs.c Çökme Noktaları (Gecikmeli)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    // ÖNEMLİ: Gecikmeyi 30 saniyeye çıkardım. 
+    // Oyun tamamen açılana kadar bekle ki taramaya yakalanma.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
-        // MSHookFunction kullanarak anogs.c içindeki fonksiyonları susturuyoruz
-        // NULL göndererek fonksiyonun içeriğini boşaltıyoruz
-        MSHookFunction((void *)(slide + 0x23A278), (void *)NULL, NULL);
-        MSHookFunction((void *)(slide + 0x23A2A0), (void *)NULL, NULL);
-        MSHookFunction((void *)(slide + 0xA181C), (void *)NULL, NULL);
+        // ACE ANALİZ MOTORLARI (Senin ofsetlerin)
+        ghost_patch(0x17998); // Case 35
+        ghost_patch(0xF012C); // Rapor Hazırlayıcı
+        ghost_patch(0xF838C); // Syscall Watcher
         
-        NSLog(@"[Gemini] Tüm bypasslar aktif ve stabil.");
+        // Ekstra: anogs.c içindeki o meşhur ispiyoncuları da ekledim
+        ghost_patch(0x23A278); 
+        ghost_patch(0x23A2A0);
     });
 }
