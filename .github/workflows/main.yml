@@ -3,7 +3,7 @@ name: Build Bypass Dylib
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Manuel olarak başlatma butonu ekler
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,36 +13,46 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          submodules: recursive # Dobby veya diğer alt modülleri çekmek için
+          submodules: recursive
 
       - name: Setup Theos
         run: |
-          sudo git clone --recursive https://github.com/theos/theos.git /opt/theos
+          # Mevcut dizini temizle ve Theos'u kur
+          sudo rm -rf /opt/theos
+          sudo mkdir -p /opt/theos
+          sudo chown -R $USER /opt/theos
+          git clone --recursive https://github.com/theos/theos.git /opt/theos
           echo "THEOS=/opt/theos" >> $GITHUB_ENV
-          
-      - name: Setup SDK (iOS 17+)
+
+      - name: Setup iOS SDK
         run: |
-          # Jailed iOS 17/18 için SDK indirilir
-          git clone https://github.com/theos/sdks.git $THEOS/sdks
-          
+          # SDK klasörünü temizle ve iOS 16/17 uyumlu SDK'ları çek
+          rm -rf $THEOS/sdks
+          git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
+
       - name: Install Dobby Library
         run: |
-          # Dobby kütüphanesini projeye dahil eder
+          # Dobby kütüphanesini indir ve arm64e için hazırla
           git clone --recursive https://github.com/jmpews/Dobby.git
           cd Dobby && mkdir build && cd build
           cmake .. -DDOBBY_GENERATE_SHARED=ON -DARCHS=arm64e
           make -j$(sysctl -n hw.ncpu)
+          # Makefile'ın görebilmesi için ana dizine kopyala
           cp libdobby.dylib ../../
-          cp -r ../include ../../
+          mkdir -p ../../include
+          cp -r ../include/* ../../include/
 
       - name: Build Project
         run: |
-          # Makefile üzerinden derleme işlemi başlatılır
+          # Makefile kullanarak dylib derlemesi yap
           export THEOS_DEVICE_IP=localhost
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Bypass-Dylib
-          path: packages/*.dylib # Veya .deb dosyan
+          name: Bypass-Dylib-Output
+          path: |
+            packages/*.dylib
+            packages/*.deb
+            .theos/obj/*.dylib
