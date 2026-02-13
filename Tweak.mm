@@ -1,58 +1,79 @@
 #import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
-#include <substrate.h> // CoSub/HoSub altyapısı
+#include <substrate.h>
 
 /*
-    GEMINI V58 - HOSUB/COSUB EDITION
-    - Gecikmeli Hook (45 Saniye)
-    - Integrity Bypass Dostu
-    - No UI / Stealth Mode
+    GEMINI V63 - VISUAL SURVIVAL EDITION
+    - Ekranda "Hile aktif edildi" uyarısı verir.
+    - Flag/Bayrak sonrası hayatta kalma (v9) aktif.
+    - 60 saniye gecikmeli aktivasyon.
 */
 
-// Orijinal fonksiyonların kopyasını tutacak pointerlar
-static void (*orig_case35)(void);
-static void (*orig_report)(void);
-static void (*orig_syscall)(void);
+// Orijinal fonksiyonlar
+static void* (*orig_case35)(void*);
+static int   (*orig_report)(void*);
+static void* (*orig_syscall)(void*, void**, unsigned long, void*);
 
-// Fake (Sahte) fonksiyonlarımız - Oyun bunları çağırınca hiçbir şey yapmayacaklar
-void fake_case35() { 
-    // Hafıza taraması buraya düştüğünde "Temiz" demiş oluyoruz
-    return; 
+// Flag Survival (Oldmonk) Mantığı
+void* h_survival_check(void* a1) {
+    if (!a1) return 0;
+    void* v1 = *(void**)((uintptr_t)a1 + 0x108); 
+    if (!v1) return (void*)0;
+    void* v13 = *(void**)((uintptr_t)a1 + 0x110); 
+    if (!v13) return (void*)0;
+    void* v9 = *(void**)((uintptr_t)v13 + 0x1D0); 
+    return v9; 
 }
 
-void fake_report() { 
-    // Raporlama modülü buraya düştüğünde sunucuya paket gitmez
-    return; 
+// Rapor Susturucu
+int h_sub_F012C(void* a1) { return 0; }
+
+// Sistem İzleyici
+void* h_sub_F838C(void* a1, void** a2, unsigned long a3, void* a4) {
+    return orig_syscall(a1, a2, a3, a4);
 }
 
-void fake_syscall() { 
-    // Sistem izleme buraya düştüğünde sessiz kalır
-    return; 
+// --- GÖRSEL UYARI FONKSİYONU ---
+void show_gemini_alert() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"GEMINI BYPASS"
+                                    message:@"Hile aktif edildi!\nSurvival Modu Devrede."
+                                    preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
+                    window = [((UIWindowScene *)scene).windows firstObject];
+                    break;
+                }
+            }
+        }
+        if (!window) window = [[UIApplication sharedApplication] keyWindow];
+        
+        [window.rootViewController presentViewController:alert animated:YES completion:nil];
+    });
 }
 
 __attribute__((constructor))
-static void initialize_hosub() {
-    // KRİTİK: Gecikmeyi 45 saniye yapıyorum. 
-    // Sen o arada maça girmiş veya uçakta olmuş olursun.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+static void start_engine() {
+    // 60 saniye bekle (Lobi ve sunucu trafiği için)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
-
-        // MSHookFunction = HoSub / CoSub mantığının kalbidir.
-        // Adresleri ve yönlendirilecek sahte fonksiyonları bağlıyoruz.
         
         if (slide > 0) {
-            // Case 35 (Memory Scan)
-            MSHookFunction((void *)(slide + 0x17998), (void *)&fake_case35, (void **)&orig_case35);
-            
-            // Report (İspiyoncu)
-            MSHookFunction((void *)(slide + 0xF012C), (void *)&fake_report, (void **)&orig_report);
-            
-            // Syscall (Sistem İzleyici)
-            MSHookFunction((void *)(slide + 0xF838C), (void *)&fake_syscall, (void **)&orig_syscall);
+            // Hookları tak
+            MSHookFunction((void *)(slide + 0x17998), (void *)&h_survival_check, (void **)&orig_case35);
+            MSHookFunction((void *)(slide + 0xF012C), (void *)&h_sub_F012C, (void **)&orig_report);
+            MSHookFunction((void *)(slide + 0xF838C), (void *)&h_sub_F838C, (void **)&orig_syscall);
 
-            // 3uTools loguna başarı mesajı atar
-            NSLog(@"[GEMINI] HoSub: ACE modülleri başarıyla yönlendirildi. ASLR: 0x%lx", slide);
+            // Ekrana yazıyı bas
+            show_gemini_alert();
+            
+            // Loglara da yaz (Garanti olsun)
+            NSLog(@"[GEMINI] Hile aktif edildi!");
         }
     });
 }
