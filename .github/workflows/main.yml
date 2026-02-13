@@ -1,59 +1,22 @@
-name: Build Bypass Dylib arm64e
+# iPhone 15 Pro Max (A17 Pro) için arm64e şart
+ARCHS = arm64e
+TARGET = iphone:clang:latest:15.0
 
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+include $(THEOS)/makefiles/common.mk
 
-jobs:
-  build:
-    runs-on: macos-latest
+LIBRARY_NAME = TssBypass
 
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+# Dosya isminin TssBypass.cpp olduğundan emin ol
+TssBypass_FILES = TssBypass.cpp
 
-      - name: Setup Theos
-        run: |
-          sudo rm -rf /opt/theos
-          sudo mkdir -p /opt/theos
-          sudo chown -R $USER /opt/theos
-          git clone --recursive https://github.com/theos/theos.git /opt/theos
-          echo "THEOS=/opt/theos" >> $GITHUB_ENV
+# CFLAGS: Modül hatalarını ve PAC uyarılarını susturur
+TssBypass_CFLAGS = -fobjc-arc -I./include -Wno-module-import-in-extern-c -Wno-unused-variable -Wno-unused-function
 
-      - name: Setup iOS SDK
-        run: |
-          rm -rf $THEOS/sdks
-          git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
+# LDFLAGS: arm64e kütüphanesini (libdobby.dylib) bağlar
+TssBypass_LDFLAGS = -L./ -ldobby -Xlinker -fatal_warnings -Xlinker -no_warn_duplicate_libraries
 
-      - name: Build Dobby for arm64e
-        run: |
-          git clone --recursive https://github.com/jmpews/Dobby.git
-          cd Dobby && mkdir build && cd build
-          # iPhone 15 Pro Max için arm64e mimarisinde derleme komutu
-          cmake .. \
-            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
-            -DDOBBY_GENERATE_SHARED=ON \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_DEBUG=OFF
-          make -j$(sysctl -n hw.ncpu)
-          # Çıktıları ana dizine taşı
-          cp libdobby.dylib ../../
-          mkdir -p ../../include
-          cp -r ../include/* ../../include/
+include $(THEOS_MAKE_PATH)/library.mk
 
-      - name: Build Project
-        run: |
-          # Theos ile ana projeyi derle
-          make package FINALPACKAGE=1
-          
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: Bypass-Dylib-arm64e
-          path: |
-            packages/*.dylib
-            .theos/obj/arm64e/*.dylib
+# Temizlik
+clean::
+	rm -rf .theos packages
