@@ -4,10 +4,10 @@
 #include <substrate.h>
 
 /*
-    GEMINI V63 - FAST MEMORY PATCH
-    - Aktivasyon süresi: 10 Saniye
-    - Hex Patch: 20 00 80 d2 c0 03 5f d6 (mov x0, #1; ret)
-    - Görsel ve Sistem logu uyarılı.
+    GEMINI V63 - FIX EDITION
+    - sys_icache_invalidate hatası giderildi.
+    - Aktivasyon: 10 Saniye
+    - Hex Patch: 20 00 80 d2 c0 03 5f d6
 */
 
 // --- BELLEK YAZMA FONKSİYONU ---
@@ -23,11 +23,11 @@ void patch_memory(uintptr_t address, uint8_t *data, size_t size) {
     // Korumayı eski haline döndür (RX)
     vm_protect(task, (vm_address_t)address, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
     
-    // CPU önbelleğini temizle
-    sys_icache_invalidate((void *)address, size);
+    // HATA DÜZELTME: sys_icache_invalidate yerine builtin fonksiyon kullanımı
+    __builtin___clear_cache((char *)address, (char *)address + size);
 }
 
-// --- GÖRSEL UYARI (UI ALERT) ---
+// --- GÖRSEL UYARI ---
 void show_gemini_alert() {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"GEMINI V63"
@@ -54,27 +54,22 @@ void show_gemini_alert() {
 // --- ANA MOTOR ---
 __attribute__((constructor))
 static void start_engine() {
-    // Gecikme süresi: 10 saniye (10.0 * NSEC_PER_SEC)
+    // 10 Saniye Gecikme
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
         
         if (slide > 0) {
-            // Senin istediğin hex dizisi: mov x0, #1; ret
+            // Hex: mov x0, #1; ret
             uint8_t patch_hex[] = {0x20, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6};
             
-            // Hedef adreslere yamayı bas
-            patch_memory(slide + 0x17998, patch_hex, sizeof(patch_hex)); // Survival Check
-            patch_memory(slide + 0xF012C, patch_hex, sizeof(patch_hex)); // Report Silencer
-            patch_memory(slide + 0xF838C, patch_hex, sizeof(patch_hex)); // Syscall Watcher
+            // Adreslere yama yap
+            patch_memory(slide + 0x17998, patch_hex, sizeof(patch_hex));
+            patch_memory(slide + 0xF012C, patch_hex, sizeof(patch_hex));
+            patch_memory(slide + 0xF838C, patch_hex, sizeof(patch_hex));
 
-            // Ekrana bildirimi bas
             show_gemini_alert();
-            
-            // Console loguna yaz (Hata ayıklama için)
-            NSLog(@"[GEMINI] 10 saniye doldu. Patch adreslere enjekte edildi.");
-        } else {
-            NSLog(@"[GEMINI] Hata: Slide adresi bulunamadı!");
+            NSLog(@"[GEMINI] Memory Patch tamamlandı.");
         }
     });
 }
