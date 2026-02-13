@@ -15,6 +15,7 @@ jobs:
 
       - name: Setup Theos
         run: |
+          # Mevcut Theos kalıntılarını temizle ve yeniden kur
           sudo rm -rf /opt/theos
           sudo mkdir -p /opt/theos
           sudo chown -R $USER /opt/theos
@@ -23,22 +24,14 @@ jobs:
 
       - name: Setup iOS SDK
         run: |
+          # iOS 15/16/17 uyumlu SDK'yı çek
           rm -rf $THEOS/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Fetch Pre-compiled Dobby (arm64e)
-        run: |
-          # CMake ile uğraşmak yerine stabil kütüphaneyi çekiyoruz
-          mkdir -p include
-          # Dobby header ve kütüphane dosyalarını doğrudan depodan çekiyoruz
-          curl -L https://github.com/jmpews/Dobby/raw/master/include/dobby.h -o include/dobby.h
-          # Not: Eğer kendi deponda libdobby.a veya libdobby.dylib varsa onu kullanır.
-          # Yoksa, hata almamak için boş bir dizin kontrolü yapıyoruz.
-          ls -R .
-
       - name: Build Project
         run: |
-          # Dobby derleme hatasını aşmak için Makefile'da kütüphane yolunu netleştiriyoruz
+          # Dobby kütüphanesi hazır olduğu için direkt derlemeye geçiyoruz
+          # Makefile içindeki ARCHS=arm64e sayesinde iPhone 15 Pro Max uyumlu olacak
           make package FINALPACKAGE=1
           
       - name: Upload Artifacts
