@@ -1,3 +1,16 @@
+name: build
+on: [push, workflow_dispatch]
+
+jobs:
+  build_job:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Tools
+        run: brew install ldid dpkg
+
       - name: Setup Theos
         run: |
           # 1. Theos'u indir
@@ -12,3 +25,28 @@
           # 4. Substrate kütüphanesini ayarla
           curl -LO https://github.com/theos/sdks/raw/master/CydiaSubstrate.tbd
           cp CydiaSubstrate.tbd $GITHUB_WORKSPACE/theos/lib/libsubstrate.tbd
+
+      - name: Create Config Files
+        run: |
+          cat <<EOF > control
+          Package: com.gemini.antiban
+          Name: antibanpatch
+          Version: 1.0.0
+          Architecture: iphoneos-arm
+          Maintainer: Gemini
+          Depends: mobilesubstrate
+          EOF
+          cat <<EOF > antibanpatch.plist
+          { Filter = { Bundles = ( "com.tencent.ig" ); }; }
+          EOF
+
+      - name: Build Package
+        run: |
+          export THEOS=$GITHUB_WORKSPACE/theos
+          make clean package FINALPACKAGE=1
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Antiban-Deb
+          path: packages/*.deb
