@@ -1,0 +1,48 @@
+name: Antiban-Derleyici-V36
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Gerekli Araclar
+        run: brew install ldid dpkg
+        
+      - name: Theos Kurulumu
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
+          git clone --depth 1 https://github.com/theos/sdks.git $GITHUB_WORKSPACE/theos/sdks
+          curl -LO https://github.com/theos/sdks/raw/master/CydiaSubstrate.tbd
+          cp CydiaSubstrate.tbd $GITHUB_WORKSPACE/theos/lib/libsubstrate.tbd
+          
+      - name: Proje Dosyalarini Olustur
+        run: |
+          # Control dosyası (Paket bilgisi)
+          cat <<EOF > control
+          Package: com.gemini.antiban
+          Name: antibanpatch
+          Version: 1.0.0
+          Architecture: iphoneos-arm
+          Maintainer: Gemini
+          Author: Gemini
+          Section: Tweaks
+          Depends: mobilesubstrate
+          EOF
+          
+          # Plist dosyası (Hangi oyunda çalısacak?)
+          cat <<EOF > antibanpatch.plist
+          { Filter = { Bundles = ( "com.tencent.ig", "com.pubg.krmobile", "com.vng.pubgmobile" ); }; }
+          EOF
+          
+      - name: Derleme Islemi
+        run: |
+          export THEOS=$GITHUB_WORKSPACE/theos
+          make clean package FINALPACKAGE=1
+          
+      - name: Dosyayi Yukle (Artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Antiban-Deb-V36
+          path: packages/*.deb
