@@ -1,21 +1,15 @@
 #import "AnoBypass.h"
 #import <substrate.h>
 
-// --- MEVCUT HOOKLARIN BURADA DEVAM EDİYOR ---
-// (Daha önce yazdığımız AceDeviceCheck, UAEMonitor vb. kodlarını burada tut)
+// Mevcut hookların (AceDeviceCheck vb.) burada kalsın...
 
-// =========================================================
-// OYUN AÇILDIĞINDA EKRANA YAZI BASMA
-// =========================================================
 %hook UnityAppController
 - (void)applicationDidBecomeActive:(id)application {
-    %orig; // Orijinal fonksiyonu çalıştır
+    %orig;
 
-    // Sadece bir kez gösterilmesi için statik bir kontrol
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // 2 saniye bekle ki oyun tam yüklensin, sonra mesajı bas
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"AnoBypass V5" 
                                         message:@"Hile Başarıyla Aktif Edildi!\nBol Şans Kanka." 
@@ -27,19 +21,28 @@
             
             [alert addAction:okAction];
             
-            // Ekrandaki en üst pencereyi bul ve mesajı oraya bas
-            [[[UIApplication sharedApplication] keyWindow] rootViewController] presentViewController:alert animated:YES completion:nil];
+            // Modern iOS (iOS 13-18) uyumlu pencere bulma yöntemi
+            UIWindow *topWindow = nil;
+            for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
+                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+                    for (UIWindow *window in windowScene.windows) {
+                        if (window.isKeyWindow) {
+                            topWindow = window;
+                            break;
+                        }
+                    }
+                }
+            }
             
-            NSLog(@"[AnoBypass] Ekrana 'Aktif' mesajı basıldı.");
+            // Eğer modern yöntem pencereyi bulamazsa (Eski iOS sürümleri için yedek)
+            if (!topWindow) {
+                topWindow = [[UIApplication sharedApplication] keyWindow];
+            }
+
+            [topWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+            
+            NSLog(@"[AnoBypass] Bildirim başarıyla gösterildi.");
         });
     });
 }
 %end
-
-// =========================================================
-// BAŞLANGIÇ LOGU (Terminalde Görünür)
-// =========================================================
-%ctor {
-    NSLog(@"[AnoBypass] Tweak Yüklendi ve Aktif!");
-    %init;
-}
