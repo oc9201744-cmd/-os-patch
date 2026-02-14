@@ -1,35 +1,49 @@
-#import "AnoBypass.h"
 #import <substrate.h>
+#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 
-// Hook fonksiyonlarını bir grup içine alalım ki hemen başlamasınlar
-%group BypassLogic
+// 1. Grup: Riskli ama gerekli bypasslar
+%group SilentBypass
 
 %hook AceDeviceCheck
 + (BOOL)isJailbroken { return NO; }
 %end
 
 %hook UAEMonitor
-+ (void)ReportEvent:(id)arg1 { return; }
++ (void)ReportEvent:(id)arg1 { 
+    // Tüm raporları susturmak yerine sadece şüpheli olanları filtrele
+    if ([arg1 isKindOfClass:[NSString class]]) {
+        NSString *event = (NSString *)arg1;
+        if ([event containsString:@"cheat"] || [event containsString:@"bypass"] || [event containsString:@"hack"]) {
+            return; 
+        }
+    }
+    %orig; 
+}
 %end
 
-// ... Diğer tüm hooklarını bu %group içine koy ...
+%hook TssSdk
+- (int)getTssSdkStatus { return 1; }
+%end
 
-%end // Group sonu
+%end
 
-// =========================================================
-// ANA BAŞLATICI (Siyah Ekranı Geçmek İçin Gecikme)
-// =========================================================
+// 2. Grup: Lobiye girdikten sonra çalışacak UI/Mesaj kısmı
+%group UILogic
+%hook UnityAppController
+- (void)applicationDidBecomeActive:(id)application {
+    %orig;
+    // Sadece lobiye girdiğinde küçük bir log bas (Görsel mesajı şimdilik kapattık ki crash yapmasın)
+    NSLog(@"[AnoBypass] Tweak Aktif!");
+}
+%end
+%end
+
 %ctor {
-    NSLog(@"[AnoBypass] Tweak yüklendi, motorun açılması bekleniyor...");
-
-    // 10 saniye bekle, sonra hileyi aktif et
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        NSLog(@"[AnoBypass] 10 saniye doldu, korumalar devreye giriyor!");
-        
-        // Group içindeki tüm hookları şimdi aktif et
-        %init(BypassLogic);
-        
-        NSLog(@"[AnoBypass] Bypass başarıyla enjekte edildi.");
+    // Siyah ekranı ve Data Error'u engellemek için 25 saniye geciktirme
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(25.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        %init(SilentBypass);
+        %init(UILogic);
+        NSLog(@"[AnoBypass] 25 saniye doldu. Bypass sessizce enjekte edildi.");
     });
 }
