@@ -1,26 +1,34 @@
-#include <substrate.h>
+#import <Foundation/Foundation.h>
 #include <mach-o/dyld.h>
+#include <mach/mach.h>
 
-// ShadowTrackerExtra içindeki hedef ofsetin
-uintptr_t get_ShadowTrackerExtra_Base() {
-    return _dyld_get_image_header(0); // Ana uygulama (ShadowTrackerExtra) genellikle index 0'dır
+// Substrate olmadan hafızaya yazma fonksiyonu
+void patch_memory(uintptr_t address, uint32_t data) {
+    mach_port_t task = mach_task_self();
+    kern_return_t kr;
+
+    // Yazma izni almak için korumayı kaldırıyoruz
+    kr = vm_protect(task, address, sizeof(data), FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    if (kr != KERN_SUCCESS) return;
+
+    // Veriyi (RET komutunu) yazıyoruz
+    kr = vm_write(task, address, (vm_offset_t)&data, sizeof(data));
+    
+    // Korumayı eski haline getiriyoruz (Read + Execute)
+    vm_protect(task, address, sizeof(data), FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
 }
 
 void setup_bypass() {
-    // Senin log kaydındaki ve bak.txt içindeki o kritik ofset
-    // Not: Fonksiyonun tam başlangıç adresini (sub_...) kullanmak en sağlıklısıdır.
-    uintptr_t target_offset = 0xF838C; 
-    uintptr_t absolute_address = get_ShadowTrackerExtra_Base() + target_offset;
+    // 1000F838C -> Ofset kısmını alıyoruz
+    uintptr_t offset = 0xF838C; 
+    uintptr_t base = _dyld_get_image_header(0);
+    uintptr_t target_address = base + offset;
 
-    // ARM64 için 'RET' komutu (Hemen geri dön, hiçbir rapor paketleme)
-    uint32_t patch_instruction = 0xD65F03C0; 
-
-    // Hafızaya yamayı yazıyoruz
-    MSHookMemory((void *)absolute_address, &patch_instruction, sizeof(patch_instruction));
+    // 0xD65F03C0 = ARM64 'RET' komutu
+    patch_memory(target_address, 0xD65F03C0);
 }
 
-// Uygulama açıldığında çalıştır
 __attribute__((constructor))
-static void initialize() {
+static void init() {
     setup_bypass();
 }
