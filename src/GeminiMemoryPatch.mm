@@ -1,37 +1,26 @@
-#import <UIKit/UIKit.h>
+#include <substrate.h>
 #include <mach-o/dyld.h>
-#include <mach/mach.h>
 
-uintptr_t get_slide() {
-    return _dyld_get_image_vmaddr_slide(0);
+// ShadowTrackerExtra içindeki hedef ofsetin
+uintptr_t get_ShadowTrackerExtra_Base() {
+    return _dyld_get_image_header(0); // Ana uygulama (ShadowTrackerExtra) genellikle index 0'dır
 }
 
-void patch_memory(uintptr_t offset, unsigned char* patch, size_t size) {
-    uintptr_t addr = get_slide() + offset;
-    mach_port_t task = mach_task_self();
-    vm_protect(task, addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    vm_write(task, addr, (vm_offset_t)patch, (mach_msg_type_number_t)size);
-    vm_protect(task, addr, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+void setup_bypass() {
+    // Senin log kaydındaki ve bak.txt içindeki o kritik ofset
+    // Not: Fonksiyonun tam başlangıç adresini (sub_...) kullanmak en sağlıklısıdır.
+    uintptr_t target_offset = 0xF838C; 
+    uintptr_t absolute_address = get_ShadowTrackerExtra_Base() + target_offset;
+
+    // ARM64 için 'RET' komutu (Hemen geri dön, hiçbir rapor paketleme)
+    uint32_t patch_instruction = 0xD65F03C0; 
+
+    // Hafızaya yamayı yazıyoruz
+    MSHookMemory((void *)absolute_address, &patch_instruction, sizeof(patch_instruction));
 }
 
-void apply_patches() {
-    unsigned char ret[] = {0xC0, 0x03, 0x5F, 0xD6};
-    uint32_t zero = 0;
-    
-    patch_memory(0x23998C, ret, 4);
-    patch_memory(0x202B5C, ret, 4);
-    patch_memory(0x2030FC, ret, 4);
-    patch_memory(0x17F4C,  ret, 4);
-    patch_memory(0xF838C,  ret, 4);
-    
-    patch_memory(0x30,  (unsigned char*)&zero, 4);
-    patch_memory(0x178, (unsigned char*)&zero, 4);
-    patch_memory(0x376, (unsigned char*)&zero, 1);
-}
-
+// Uygulama açıldığında çalıştır
 __attribute__((constructor))
-void _init() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        apply_patches();
-    });
+static void initialize() {
+    setup_bypass();
 }
