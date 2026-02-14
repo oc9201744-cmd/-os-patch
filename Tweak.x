@@ -1,7 +1,7 @@
 #import "AnoBypass.h"
 #import <substrate.h>
 
-// Mevcut hookların (AceDeviceCheck vb.) burada kalsın...
+// Hookların (AceDeviceCheck vb.) burada kalsın...
 
 %hook UnityAppController
 - (void)applicationDidBecomeActive:(id)application {
@@ -9,7 +9,7 @@
 
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"AnoBypass V5" 
                                         message:@"Hile Başarıyla Aktif Edildi!\nBol Şans Kanka." 
@@ -21,7 +21,7 @@
             
             [alert addAction:okAction];
             
-            // Modern iOS (iOS 13-18) uyumlu pencere bulma yöntemi
+            // Sadece modern yöntem
             UIWindow *topWindow = nil;
             for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
                 if (windowScene.activationState == UISceneActivationStateForegroundActive) {
@@ -34,14 +34,10 @@
                 }
             }
             
-            // Eğer modern yöntem pencereyi bulamazsa (Eski iOS sürümleri için yedek)
-            if (!topWindow) {
-                topWindow = [[UIApplication sharedApplication] keyWindow];
+            // Eğer pencere bulunduysa göster
+            if (topWindow && topWindow.rootViewController) {
+                [topWindow.rootViewController presentViewController:alert animated:YES completion:nil];
             }
-
-            [topWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-            
-            NSLog(@"[AnoBypass] Bildirim başarıyla gösterildi.");
         });
     });
 }
