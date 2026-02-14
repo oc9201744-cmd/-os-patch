@@ -1,2 +1,53 @@
-build
-No files were found with the provided path: build/Release/GeminiBypass.dylib. No artifacts will be uploaded.
+name: Build GeminiBypass dylib
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: brew install cmake
+
+    - name: Select Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '16.0'
+
+    - name: Clean previous build
+      run: rm -rf build || true
+
+    - name: Create build directory
+      run: mkdir build
+
+    - name: Configure CMake
+      run: |
+        cd build
+        cmake .. \
+          -DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake \
+          -DPLATFORM=OS64COMBINED \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+          -DCMAKE_VERBOSE_MAKEFILE=ON
+
+    - name: Build
+      run: cd build && cmake --build . --config Release --verbose
+
+    - name: List build files (debug)
+      run: ls -la build || true
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GeminiBypass-dylib
+        path: |
+          build/*.dylib
+          build/Release/*.dylib
+          build/**/*.dylib
