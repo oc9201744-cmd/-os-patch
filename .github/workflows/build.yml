@@ -1,76 +1,68 @@
-name: Build GeminiBypass dylib
+name: Build GeminiBypass with Theos
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:  # Manuel çalıştırabilmek için
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: brew install cmake
+      - name: Setup Theos & SDKs
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          git clone --depth=1 https://github.com/theos/sdks.git $HOME/theos/sdks
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "THEOS_DEVICE_IP=127.0.0.1" >> $GITHUB_ENV  # Dummy, paketleme için
+          echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
 
-    - name: Select Xcode version
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '16.0'
+      - name: Install Build Tools
+        run: |
+          brew install cmake ldid dpkg xz
 
-    - name: Clean previous build (cache temizle)
-      run: rm -rf build || true
+      - name: Create Theos Project Structure (eğer yoksa)
+        run: |
+          cd $GITHUB_WORKSPACE
+          if [ ! -f Makefile ]; then
+            echo "Makefile yok, basit tweak şablonu oluşturuyoruz..."
+            $THEOS/bin/nic.pl <<EOF
+            iphone/tweak
+            GeminiBypass
+            com.yourname.geminibypass
+            Your Name
+            EOF
+          fi
 
-    - name: Create build directory
-      run: mkdir build
+      - name: Copy Your Source Files
+        run: |
+          cp -f src/GeminiMemoryPatch.cpp Tweak.xm || echo "Tweak.xm'e kopyalandı"
 
-    - name: Configure CMake with iOS toolchain
-      run: |
-        cd build
-        cmake .. \
-          -DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake \
-          -DPLATFORM=OS64COMBINED \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-          -DCMAKE_VERBOSE_MAKEFILE=ON \
-          -DCMAKE_BUILD_TYPE=Release
+      - name: Update Makefile for your tweak
+        run: |
+          cat > Makefile <<EOF
+          include \$(THEOS)/makefiles/common.mk
 
-    - name: Build the dylib (verbose log ile)
-      run: cd build && cmake --build . --verbose || echo "Derleme hatası - log'a bak"
+          TWEAK_NAME = GeminiBypass
+          GeminiBypass_FILES = Tweak.xm
 
-    - name: Tüm build klasörünü listele (debug için)
-      run: |
-        echo "Build klasöründe ne var bakalım:"
-        ls -laR build || true
-        echo ""
-        echo "Sadece dylib dosyalarını ara:"
-        find build -name "*.dylib" -or -name "GeminiBypass*" || echo "Hiç dylib bulunamadı"
+          include \$(THEOS_MAKE_PATH)/tweak.mk
+          EOF
 
-    - name: Dylib varsa rename et (lib önekini kaldır)
-      run: |
-        cd build
-        if [ -f "libGeminiBypass.dylib" ]; then
-          mv libGeminiBypass.dylib GeminiBypass.dylib
-          echo "libGeminiBypass.dylib → GeminiBypass.dylib olarak rename edildi"
-        fi
-        ls -la *.dylib || true
+      - name: Build and Package
+        run: |
+          cd $GITHUB_WORKSPACE
+          make package FINALPACKAGE=1 || echo "Make package hatası - log'a bak"
 
-    - name: Artifact olarak yükle (tüm olası yollar)
-      uses: actions/upload-artifact@v4
-      if: always()  # hata olsa bile artifact yüklesin
-      with:
-        name: GeminiBypass-dylib
-        path: |
-          build/*.dylib
-          build/**/*.dylib
-          build/lib*.dylib
-          build/GeminiBypass.dylib
-          build/Release/*.dylib
-          build/Release/**/*.dylib
+      - name: List Packages
+        run: ls -la packages/ || true
 
-    - name: Artifact yoksa bilgi ver
-      if: failure()
-      run: echo "Artifact yüklenemedi - log'lara bakın (build klasöründe dylib oluşmamış
+      - name: Upload .deb Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeminiBypass-Deb
+          path: packages/*.deb
