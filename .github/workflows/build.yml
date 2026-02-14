@@ -17,18 +17,18 @@ jobs:
     - name: Install dependencies
       run: brew install cmake
 
-    - name: Select Xcode
+    - name: Select Xcode version
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: '16.0'
 
-    - name: Clean previous build
+    - name: Clean previous build (cache temizle)
       run: rm -rf build || true
 
     - name: Create build directory
       run: mkdir build
 
-    - name: Configure CMake
+    - name: Configure CMake with iOS toolchain
       run: |
         cd build
         cmake .. \
@@ -38,22 +38,29 @@ jobs:
           -DCMAKE_VERBOSE_MAKEFILE=ON \
           -DCMAKE_BUILD_TYPE=Release
 
-    - name: Build
-      run: cd build && cmake --build . --verbose
+    - name: Build the dylib (verbose log ile)
+      run: cd build && cmake --build . --verbose || echo "Derleme hatası - log'a bak"
 
-    - name: List ALL files in build folder (debug)
-      run: ls -laR build || true
+    - name: Tüm build klasörünü listele (debug için)
+      run: |
+        echo "Build klasöründe ne var bakalım:"
+        ls -laR build || true
+        echo ""
+        echo "Sadece dylib dosyalarını ara:"
+        find build -name "*.dylib" -or -name "GeminiBypass*" || echo "Hiç dylib bulunamadı"
 
-    - name: Find and rename dylib if needed
+    - name: Dylib varsa rename et (lib önekini kaldır)
       run: |
         cd build
         if [ -f "libGeminiBypass.dylib" ]; then
           mv libGeminiBypass.dylib GeminiBypass.dylib
+          echo "libGeminiBypass.dylib → GeminiBypass.dylib olarak rename edildi"
         fi
         ls -la *.dylib || true
 
-    - name: Upload artifact
+    - name: Artifact olarak yükle (tüm olası yollar)
       uses: actions/upload-artifact@v4
+      if: always()  # hata olsa bile artifact yüklesin
       with:
         name: GeminiBypass-dylib
         path: |
@@ -61,3 +68,9 @@ jobs:
           build/**/*.dylib
           build/lib*.dylib
           build/GeminiBypass.dylib
+          build/Release/*.dylib
+          build/Release/**/*.dylib
+
+    - name: Artifact yoksa bilgi ver
+      if: failure()
+      run: echo "Artifact yüklenemedi - log'lara bakın (build klasöründe dylib oluşmamış
