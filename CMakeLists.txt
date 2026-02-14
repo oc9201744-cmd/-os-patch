@@ -1,46 +1,34 @@
-# Minimum CMake sürümü
+# ios-cmake toolchain (2025-2026 uyumlu, PLATFORM zorunluluğunu kaldırdık)
+# https://github.com/leetal/ios-cmake
+
 cmake_minimum_required(VERSION 3.14)
 
-# iOS için toolchain dosyasını kullan (ios.toolchain.cmake)
-set(CMAKE_TOOLCHAIN_FILE "${CMAKE_CURRENT_SOURCE_DIR}/ios.toolchain.cmake" CACHE PATH "iOS toolchain")
+# Default platform if not set
+if(NOT PLATFORM)
+  set(PLATFORM OS64COMBINED CACHE STRING "Target platform" FORCE)
+endif()
 
-# iOS platform tipi (cihaz + simulator kombine)
-set(PLATFORM OS64COMBINED CACHE STRING "iOS platform type")
+if(NOT DEPLOYMENT_TARGET)
+  set(DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum iOS version" FORCE)
+endif()
 
-# Minimum iOS sürümü
-set(DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum iOS version")
+# Sysroot and architectures
+if(PLATFORM MATCHES "OS.*")
+  set(CMAKE_OSX_SYSROOT iphoneos)
+  set(CMAKE_OSX_ARCHITECTURES "arm64;arm64e")
+elseif(PLATFORM MATCHES "SIMULATOR.*")
+  set(CMAKE_OSX_SYSROOT iphonesimulator)
+  set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+elseif(PLATFORM STREQUAL "MACCATALYST")
+  set(CMAKE_OSX_SYSROOT macosx)
+  set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64")
+else()
+  message(FATAL_ERROR "Unknown platform: ${PLATFORM}. Valid: OS64COMBINED, SIMULATORARM64, etc.")
+endif()
 
-# Proje adı ve dili
-project(GeminiBypass LANGUAGES CXX)
+set(CMAKE_OSX_DEPLOYMENT_TARGET "${DEPLOYMENT_TARGET}" CACHE STRING "Deployment target" FORCE)
 
-# C++ standardı
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# Derlenecek dosya
-add_library(GeminiBypass SHARED
-    src/GeminiMemoryPatch.cpp
-)
-
-# Çıktı ayarları (.dylib olsun)
-set_target_properties(GeminiBypass PROPERTIES
-    OUTPUT_NAME "GeminiBypass"
-    PREFIX ""
-    SUFFIX ".dylib"
-)
-
-# Derleme seçenekleri (küçük ve gizli olsun)
-target_compile_options(GeminiBypass PRIVATE
-    -Os
-    -fvisibility=hidden
-    -fvisibility-inlines-hidden
-    -fno-objc-arc
-    -Wno-deprecated-declarations
-)
-
-# Bağlanacak framework'ler
-target_link_libraries(GeminiBypass
-    "-framework Foundation"
-    "-framework UIKit"
-    "-framework CoreFoundation"
-)
+message(STATUS "Platform: ${PLATFORM}")
+message(STATUS "Architectures: ${CMAKE_OSX_ARCHITECTURES}")
+message(STATUS "Deployment target: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+message(STATUS "Sysroot: ${CMAKE_OSX_SYSROOT}")
