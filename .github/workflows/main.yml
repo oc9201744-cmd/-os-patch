@@ -12,13 +12,18 @@ jobs:
 
     steps:
       - name: "📦 Depoyu Çek"
-        uses: actions/checkout@v4 # V4 kullanıyoruz
+        uses: actions/checkout@v4
 
-      - name: "🛠 Theos Kurulumu"
+      - name: "🛠 Theos ve SDK Kurulumu"
         run: |
           export THEOS=~/theos
+          # Eğer klasör varsa temizle (Hata 128 Çözümü)
+          rm -rf $THEOS
+          
           git clone --recursive https://github.com/theos/theos.git $THEOS
-          # SDK'ları otomatik indir ve kur
+          
+          # SDK klasörünü garantiye al ve çek
+          rm -rf $THEOS/sdks
           git clone https://github.com/theos/sdks.git $THEOS/sdks
 
       - name: "⚙️ Çevresel Değişkenleri Ayarla"
@@ -26,15 +31,15 @@ jobs:
           echo "THEOS=~/theos" >> $GITHUB_ENV
           echo "~/theos/bin" >> $GITHUB_PATH
 
-      - name: "🏗 Tweak'i Derle (Final)"
+      - name: "🏗 Tweak'i Derle"
         run: |
+          # Theos'un yolu ve derleme emri
           make package FINALPACKAGE=1
         env:
           THEOS: ~/theos
 
       - name: "🚀 .deb Dosyasını Çıktı Ver"
-        uses: actions/upload-artifact@v4 # Artifact V4
+        uses: actions/upload-artifact@v4
         with:
           name: "AnoBypass_V4_Final"
           path: packages/*.deb
-          if-no-files-found: error
