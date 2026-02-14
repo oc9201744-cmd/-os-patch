@@ -1,9 +1,9 @@
-name: Build GeminiBypass with Theos
+name: Build GeminiBypass CMake
 
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:  # Manuel çalıştırabilmek için
+  workflow_dispatch:
 
 jobs:
   build:
@@ -13,56 +13,47 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Theos & SDKs
+      - name: Setup Theos & SDK
         run: |
+          rm -rf $HOME/theos
           git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          rm -rf $HOME/theos/sdks
           git clone --depth=1 https://github.com/theos/sdks.git $HOME/theos/sdks
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "THEOS_DEVICE_IP=127.0.0.1" >> $GITHUB_ENV  # Dummy, paketleme için
-          echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
 
       - name: Install Build Tools
         run: |
-          brew install cmake ldid dpkg xz
+          brew install cmake ldid dpkg
 
-      - name: Create Theos Project Structure (eğer yoksa)
+      - name: Configure and Build
         run: |
-          cd $GITHUB_WORKSPACE
-          if [ ! -f Makefile ]; then
-            echo "Makefile yok, basit tweak şablonu oluşturuyoruz..."
-            $THEOS/bin/nic.pl <<EOF
-            iphone/tweak
-            GeminiBypass
-            com.yourname.geminibypass
-            Your Name
-            EOF
-          fi
+          mkdir build
+          cd build
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
+            -DCMAKE_OSX_SYSROOT="iphoneos"
+          make -j$(sysctl -n hw.ncpu)
 
-      - name: Copy Your Source Files
+      - name: Sign and Package
         run: |
-          cp -f src/GeminiMemoryPatch.cpp Tweak.xm || echo "Tweak.xm'e kopyalandı"
+          cd build
+          # Klasördeki dylib'i bul ve imzala
+          TARGET_DYLIB=$(ls *.dylib | head -n 1)
+          ldid -S../TssBypass.plist "$TARGET_DYLIB"
+          
+          # Deb paket yapısı
+          mkdir -p pkg/Library/MobileSubstrate/DynamicLibraries
+          mkdir -p pkg/DEBIAN
+          
+          cp "$TARGET_DYLIB" pkg/Library/MobileSubstrate/DynamicLibraries/GeminiBypass.dylib
+          cp ../TssBypass.plist pkg/Library/MobileSubstrate/DynamicLibraries/GeminiBypass.plist
+          cp ../control pkg/DEBIAN/
+          
+          dpkg-deb --build pkg GeminiBypass_A17Pro.deb
 
-      - name: Update Makefile for your tweak
-        run: |
-          cat > Makefile <<EOF
-          include \$(THEOS)/makefiles/common.mk
-
-          TWEAK_NAME = GeminiBypass
-          GeminiBypass_FILES = Tweak.xm
-
-          include \$(THEOS_MAKE_PATH)/tweak.mk
-          EOF
-
-      - name: Build and Package
-        run: |
-          cd $GITHUB_WORKSPACE
-          make package FINALPACKAGE=1 || echo "Make package hatası - log'a bak"
-
-      - name: List Packages
-        run: ls -la packages/ || true
-
-      - name: Upload .deb Artifact
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: GeminiBypass-Deb
-          path: packages/*.deb
+          name: GeminiBypass-Package
+          path: build/GeminiBypass_A17Pro.deb
