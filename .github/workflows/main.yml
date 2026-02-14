@@ -1,0 +1,40 @@
+name: "Bypass_Builder_V4"
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: "Derleme İşlemi (V4)"
+    runs-on: macos-latest
+
+    steps:
+      - name: "📦 Depoyu Çek"
+        uses: actions/checkout@v4 # V4 kullanıyoruz
+
+      - name: "🛠 Theos Kurulumu"
+        run: |
+          export THEOS=~/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          # SDK'ları otomatik indir ve kur
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
+
+      - name: "⚙️ Çevresel Değişkenleri Ayarla"
+        run: |
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+          echo "~/theos/bin" >> $GITHUB_PATH
+
+      - name: "🏗 Tweak'i Derle (Final)"
+        run: |
+          make package FINALPACKAGE=1
+        env:
+          THEOS: ~/theos
+
+      - name: "🚀 .deb Dosyasını Çıktı Ver"
+        uses: actions/upload-artifact@v4 # Artifact V4
+        with:
+          name: "AnoBypass_V4_Final"
+          path: packages/*.deb
+          if-no-files-found: error
