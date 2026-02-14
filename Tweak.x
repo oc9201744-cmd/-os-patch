@@ -1,44 +1,35 @@
 #import "AnoBypass.h"
 #import <substrate.h>
 
-// Hookların (AceDeviceCheck vb.) burada kalsın...
+// Hook fonksiyonlarını bir grup içine alalım ki hemen başlamasınlar
+%group BypassLogic
 
-%hook UnityAppController
-- (void)applicationDidBecomeActive:(id)application {
-    %orig;
+%hook AceDeviceCheck
++ (BOOL)isJailbroken { return NO; }
+%end
 
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"AnoBypass V5" 
-                                        message:@"Hile Başarıyla Aktif Edildi!\nBol Şans Kanka." 
-                                        preferredStyle:UIAlertControllerStyleAlert];
-            
-            UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"Tamam" 
-                                       style:UIAlertActionStyleDefault 
-                                       handler:nil];
-            
-            [alert addAction:okAction];
-            
-            // Sadece modern yöntem
-            UIWindow *topWindow = nil;
-            for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
-                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                    for (UIWindow *window in windowScene.windows) {
-                        if (window.isKeyWindow) {
-                            topWindow = window;
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            // Eğer pencere bulunduysa göster
-            if (topWindow && topWindow.rootViewController) {
-                [topWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-            }
-        });
+%hook UAEMonitor
++ (void)ReportEvent:(id)arg1 { return; }
+%end
+
+// ... Diğer tüm hooklarını bu %group içine koy ...
+
+%end // Group sonu
+
+// =========================================================
+// ANA BAŞLATICI (Siyah Ekranı Geçmek İçin Gecikme)
+// =========================================================
+%ctor {
+    NSLog(@"[AnoBypass] Tweak yüklendi, motorun açılması bekleniyor...");
+
+    // 10 saniye bekle, sonra hileyi aktif et
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        NSLog(@"[AnoBypass] 10 saniye doldu, korumalar devreye giriyor!");
+        
+        // Group içindeki tüm hookları şimdi aktif et
+        %init(BypassLogic);
+        
+        NSLog(@"[AnoBypass] Bypass başarıyla enjekte edildi.");
     });
 }
-%end
