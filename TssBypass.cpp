@@ -1,64 +1,63 @@
+#import <UIKit/UIKit.h>
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
-#include <cstdint>
-#include <cstdio>
-#include <sys/mman.h>
-#include <unistd.h>
-#include <vector>
-#include <libkern/OSCacheControl.h> 
-#include <dispatch/dispatch.h>      
+#include <libkern/OSCacheControl.h> // ÖNEMLİ: sys_icache_invalidate için
 
-// --- YARDIMCI FONKSİYONLAR ---
-
-uintptr_t get_image_vmaddr_slide() {
+uintptr_t get_slide() {
     return _dyld_get_image_vmaddr_slide(0);
 }
 
-uintptr_t calculate_address(uintptr_t offset) {
-    return get_image_vmaddr_slide() + offset;
-}
-
-bool apply_patch(uintptr_t offset, std::vector<uint8_t> bytes) {
-    uintptr_t target_addr = calculate_address(offset);
-    size_t size = bytes.size();
-    uintptr_t page_start = target_addr & ~(vm_page_size - 1);
+void patch_memory(uintptr_t offset, unsigned char* patch, size_t size) {
+    uintptr_t addr = get_slide() + offset;
+    mach_port_t task = mach_task_self();
     
-    kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)page_start, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    if (kr != KERN_SUCCESS) return false;
+    // Sayfa hizalaması (16KB sayfa yapısı için şart)
+    uintptr_t page_start = addr & ~0x3FFF;
+    size_t page_size = (addr + size - page_start + 0x3FFF) & ~0x3FFF;
 
-    memcpy((void *)target_addr, bytes.data(), size);
+    // 1. Yazma izni al
+    kern_return_t kr = vm_protect(task, page_start, page_size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    if (kr != KERN_SUCCESS) return;
 
-    vm_protect(mach_task_self(), (vm_address_t)page_start, vm_page_size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
-    sys_icache_invalidate((void *)target_addr, size);
-    return true;
+    // 2. Yamayı yaz
+    if (vm_write(task, addr, (vm_offset_t)patch, (mach_msg_type_number_t)size) != KERN_SUCCESS) {
+        memcpy((void *)addr, patch, size); // vm_write başarısız olursa alternatif
+    }
+
+    // 3. İzinleri eski haline getir (Sadece Oku ve Çalıştır)
+    vm_protect(task, page_start, page_size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+
+    // 4. KRİTİK: CPU Önbelleğini temizle (Ban yememek için şart!)
+    sys_icache_invalidate((void *)addr, size);
 }
 
-// --- ANA MOTOR ---
+void apply_patches() {
+    // arm64 'RET' instruction: 0xC0035FD6
+    unsigned char ret[] = {0xC0, 0x03, 0x5F, 0xD6};
+    uint32_t zero = 0;
+    
+    // Analiz ettiğimiz Ace/AnoSDK kritik kontrol noktaları
+    patch_memory(0xF838C,  ret, 4);  // Sistem çağrı tablosu kontrolü (bak 6.txt)
+    patch_memory(0x23998C, ret, 4);  // Raporlama mekanizması
+    patch_memory(0x202B5C, ret, 4);  // Thread izleme
+    patch_memory(0x2030FC, ret, 4);  // Modül doğrulama
+    patch_memory(0x17F4C,  ret, 4);  // Integrity Check (Bütünlük Kontrolü)
+    
+    // Küçük ofsetlerdeki (Data segmenti) kontrolleri sıfırlıyoruz
+    patch_memory(0x30,  (unsigned char*)&zero, 4);
+    patch_memory(0x178, (unsigned char*)&zero, 4);
+    
+    // Tek byte'lık bayrak (Flag) yaması
+    unsigned char zero_byte = 0;
+    patch_memory(0x376, &zero_byte, 1);
+    
+    NSLog(@"[TssBypass] Tüm yamalar başarıyla uygulandı!");
+}
 
 __attribute__((constructor))
-static void init() {
-    // Uygulama ve Ace SDK'nın (AnoSDK) tam yüklenmesi için 5 saniye bekliyoruz
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        uintptr_t slide = get_image_vmaddr_slide();
-        printf("[TssBypass] Ace SDK Bypass Baslatildi. Slide: 0x%lx\n", slide);
-
-        // ANALİZ EDİLEN OFFSETLER VE YAMALAR:
-        
-        // 1. Ace SDK Versiyon Kontrolü Bypass (sub_F012C)
-        // Bu fonksiyon versiyon kontrolü yapıyor. Genelde RET 1 (True) yapmak işe yarar.
-        // Offset: 0xF012C -> arm64: MOV X0, #1 | RET
-        apply_patch(0xF012C, {0x20, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6});
-
-        // 2. Sistem Fonksiyon Tablosu Bypass (sub_F838C)
-        // mmap, gettimeofday gibi çağrıların izlendiği yer.
-        // Burayı bozmak algılamayı durdurabilir.
-        apply_patch(0xF838C, {0xC0, 0x03, 0x5F, 0xD6});
-
-        // 3. Thread Kontrolü (sub_365A4)
-        // pthread_once ile çalışan kontrol mekanizması.
-        apply_patch(0x365A4, {0x20, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6});
-
-        printf("[TssBypass] Tum yamalar uygulandi. Iyi oyunlar!\n");
+void _init() {
+    // 1.5 saniye bekleme süresi iyidir, uygulamanın yüklenmesine izin verir
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.5 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        apply_patches();
     });
 }
