@@ -1,0 +1,33 @@
+name: Build GeminiBypass dylib
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install CMake
+      run: brew install cmake
+
+    - name: Create build directory
+      run: mkdir build && cd build
+
+    - name: Configure with CMake
+      run: cd build && cmake ..
+
+    - name: Build dylib
+      run: cd build && cmake --build . --config Release
+
+    - name: Upload dylib artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: GeminiBypass-dylib
+        path: build/Release/GeminiBypass.dylib
