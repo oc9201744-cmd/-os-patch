@@ -14,15 +14,16 @@ jobs:
       - name: "📦 Depoyu Çek"
         uses: actions/checkout@v4
 
-      - name: "🛠 Theos ve SDK Kurulumu"
+      - name: "🛠 Theos ve Bağımlılıkları Kur"
         run: |
-          export THEOS=~/theos
-          # Eğer klasör varsa temizle (Hata 128 Çözümü)
-          rm -rf $THEOS
+          # ldid ve dpkg kurulumu (İmzalama ve Paketleme için şart)
+          brew install ldid dpkg
           
+          export THEOS=~/theos
+          rm -rf $THEOS
           git clone --recursive https://github.com/theos/theos.git $THEOS
           
-          # SDK klasörünü garantiye al ve çek
+          # SDK kurulumu
           rm -rf $THEOS/sdks
           git clone https://github.com/theos/sdks.git $THEOS/sdks
 
@@ -33,8 +34,8 @@ jobs:
 
       - name: "🏗 Tweak'i Derle"
         run: |
-          # Theos'un yolu ve derleme emri
-          make package FINALPACKAGE=1
+          # -j$(sysctl -n hw.ncpu) komutu derlemeyi tüm çekirdekleri kullanarak hızlandırır
+          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
         env:
           THEOS: ~/theos
 
