@@ -1,4 +1,4 @@
-name: Build GeminiBypass CMake
+name: Build Bypass with CMake
 
 on:
   push:
@@ -29,20 +29,18 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake .. \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_ARCHITECTURES="arm64e" \
-            -DCMAKE_OSX_SYSROOT="iphoneos"
+          cmake .. -DCMAKE_BUILD_TYPE=Release
           make -j$(sysctl -n hw.ncpu)
+          ls -l
 
       - name: Sign and Package
         run: |
           cd build
-          # Klasördeki dylib'i bul ve imzala
+          # Çıkan dylib'i bul ve imzala
           TARGET_DYLIB=$(ls *.dylib | head -n 1)
           ldid -S../TssBypass.plist "$TARGET_DYLIB"
           
-          # Deb paket yapısı
+          # Paketleme yapısı
           mkdir -p pkg/Library/MobileSubstrate/DynamicLibraries
           mkdir -p pkg/DEBIAN
           
@@ -50,10 +48,10 @@ jobs:
           cp ../TssBypass.plist pkg/Library/MobileSubstrate/DynamicLibraries/GeminiBypass.plist
           cp ../control pkg/DEBIAN/
           
-          dpkg-deb --build pkg GeminiBypass_A17Pro.deb
+          dpkg-deb --build pkg GeminiBypass_Final.deb
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: GeminiBypass-Package
-          path: build/GeminiBypass_A17Pro.deb
+          path: build/*.deb
