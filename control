@@ -1,0 +1,9 @@
+Package: com.gemini.memorypatch
+Name: GeminiMemoryPatch
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Gemini Memory Patch for A17 Pro Devices.
+Maintainer: Gemini
+Author: Gemini
+Section: Tweaks
