@@ -1,17 +1,44 @@
-cmake_minimum_required(VERSION 3.14)
-project(GeminiBypass LANGUAGES CXX)
+#import <UIKit/UIKit.h>
+#include <mach-o/dyld.h>
+#include <mach/mach.h>
 
-set(CMAKE_CXX_STANDARD 17)
+// ====================== GEMINI MEMORY PATCH V14 (2026) ======================
+// Stealth Mode - No log, no alert, no UI
 
-add_library(GeminiBypass SHARED
-    src/GeminiMemoryPatch.cpp
-)
+uintptr_t get_slide() {
+    return _dyld_get_image_vmaddr_slide(0);
+}
 
-set_target_properties(GeminiBypass PROPERTIES
-    OUTPUT_NAME "GeminiBypass"
-    PREFIX ""
-    SUFFIX ".dylib"
-)
+void patch_memory(uintptr_t offset, unsigned char* patch, size_t size) {
+    uintptr_t addr = get_slide() + offset;
+    mach_port_t task = mach_task_self();
+    
+    vm_protect(task, addr, size, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    vm_write(task, addr, (vm_offset_t)patch, (mach_msg_type_number_t)size);
+    vm_protect(task, addr, size, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+}
 
-target_compile_options(GeminiBypass PRIVATE -Os -fvisibility=hidden)
-target_link_libraries(GeminiBypass "-framework Foundation" "-framework UIKit")
+void apply_patches() {
+    unsigned char ret[] = {0xC0, 0x03, 0x5F, 0xD6}; // RET
+    uint32_t zero = 0;
+    
+    // Ana ban tetikleyicileri
+    patch_memory(0x23998C, ret, 4);
+    patch_memory(0x202B5C, ret, 4);
+    patch_memory(0x2030FC, ret, 4);
+    patch_memory(0x17F4C,  ret, 4);
+    patch_memory(0xF838C,  ret, 4);
+    
+    // Ban flag'leri sıfırla
+    patch_memory(0x30,  (unsigned char*)&zero, 4);
+    patch_memory(0x178, (unsigned char*)&zero, 4);
+    patch_memory(0x376, (unsigned char*)&zero, 1);
+}
+
+__attribute__((constructor))
+void _init() {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1.5 * NSEC_PER_SEC), 
+                   dispatch_get_main_queue(), ^{
+        apply_patches();
+    });
+}
