@@ -35,13 +35,22 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE=../ios.toolchain.cmake \
           -DPLATFORM=OS64COMBINED \
           -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-          -DCMAKE_VERBOSE_MAKEFILE=ON
+          -DCMAKE_VERBOSE_MAKEFILE=ON \
+          -DCMAKE_BUILD_TYPE=Release
 
     - name: Build
-      run: cd build && cmake --build . --config Release --verbose
+      run: cd build && cmake --build . --verbose
 
-    - name: List build files (debug)
-      run: ls -la build || true
+    - name: List ALL files in build folder (debug)
+      run: ls -laR build || true
+
+    - name: Find and rename dylib if needed
+      run: |
+        cd build
+        if [ -f "libGeminiBypass.dylib" ]; then
+          mv libGeminiBypass.dylib GeminiBypass.dylib
+        fi
+        ls -la *.dylib || true
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -49,5 +58,6 @@ jobs:
         name: GeminiBypass-dylib
         path: |
           build/*.dylib
-          build/Release/*.dylib
           build/**/*.dylib
+          build/lib*.dylib
+          build/GeminiBypass.dylib
