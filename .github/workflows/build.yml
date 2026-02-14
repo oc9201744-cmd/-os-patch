@@ -1,57 +1,29 @@
-name: Build Bypass with CMake
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Theos & SDK
-        run: |
-          rm -rf $HOME/theos
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          rm -rf $HOME/theos/sdks
-          git clone --depth=1 https://github.com/theos/sdks.git $HOME/theos/sdks
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-
-      - name: Install Build Tools
-        run: |
-          brew install cmake ldid dpkg
-
-      - name: Configure and Build
-        run: |
-          mkdir build
-          cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release
-          make -j$(sysctl -n hw.ncpu)
-          ls -l
-
       - name: Sign and Package
         run: |
           cd build
-          # Çıkan dylib'i bul ve imzala
+          # 1. Oluşan dylib'i tam adıyla bul
           TARGET_DYLIB=$(ls *.dylib | head -n 1)
-          ldid -S../TssBypass.plist "$TARGET_DYLIB"
+          echo "Bulunan Dosya: $TARGET_DYLIB"
           
-          # Paketleme yapısı
+          # 2. Plist dosyasının varlığını kontrol et (Hata buradaysa görelim)
+          if [ ! -f "../TssBypass.plist" ]; then
+            echo "HATA: TssBypass.plist ana dizinde bulunamadı!"
+            ls -l ..
+            exit 1
+          fi
+
+          # 3. İmzalamayı tam yol belirterek yap (Hata 134'ü engeller)
+          # Plist dosyasının başında boşluk kalmamasına dikkat
+          ldid -S"../TssBypass.plist" "$TARGET_DYLIB"
+          
+          # 4. Paketleme klasörlerini oluştur
           mkdir -p pkg/Library/MobileSubstrate/DynamicLibraries
           mkdir -p pkg/DEBIAN
           
+          # 5. Dosyaları kopyala
           cp "$TARGET_DYLIB" pkg/Library/MobileSubstrate/DynamicLibraries/GeminiBypass.dylib
           cp ../TssBypass.plist pkg/Library/MobileSubstrate/DynamicLibraries/GeminiBypass.plist
           cp ../control pkg/DEBIAN/
           
+          # 6. Deb paketini oluştur
           dpkg-deb --build pkg GeminiBypass_Final.deb
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: GeminiBypass-Package
-          path: build/*.deb
