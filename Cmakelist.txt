@@ -1,0 +1,44 @@
+# Minimum CMake Versiyonu
+cmake_minimum_required(VERSION 3.15)
+
+# Proje Adı
+project(DobbyHookExample LANGUAGES C CXX ASM)
+
+# iOS Hedef Platform (Sistem, Mimari, Minimum iOS Sürümü)
+set(CMAKE_SYSTEM_NAME iOS)
+set(CMAKE_OSX_SYSROOT iphoneos)
+set(CMAKE_OSX_ARCHITECTURES arm64)
+set(CMAKE_OSX_DEPLOYMENT_TARGET 9.0)
+
+# C++ Standardı
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# UIKit ve Foundation Bağımlılıkları
+find_library(UIKIT_LIBRARY UIKit)
+find_library(FOUNDATION_LIBRARY Foundation)
+
+# Kaynak Dosyalar
+set(SOURCES
+    main.cpp
+    DobbyHookExample.mm
+)
+
+# Statik Kütüphane (libdobby.a) Oluşturuluyor
+add_library(dobby_hook STATIC ${SOURCES})
+
+# UIKit ve Foundation Bağlantıları
+target_link_libraries(dobby_hook
+    ${UIKIT_LIBRARY}
+    ${FOUNDATION_LIBRARY}
+)
+
+# Çıktı Yolları
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Kontrol ve Loglama
+message("CMAKE_OSX_SYSROOT: ${CMAKE_OSX_SYSROOT}")
+message("CMAKE_OSX_ARCHITECTURES: ${CMAKE_OSX_ARCHITECTURES}")
