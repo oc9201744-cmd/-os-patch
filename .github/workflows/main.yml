@@ -1,4 +1,4 @@
-name: Build-Dobby-iOS-Clean
+name: Build-Dobby-iOS-Stable
 
 on:
   push:
@@ -9,25 +9,23 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout (clean)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           clean: true
 
-      - name: Remove old Dobby if exists
+      - name: Clone Dobby (PINNED WORKING COMMIT)
         run: |
-          rm -rf Dobby
+          git clone https://github.com/jmpews/Dobby.git
+          cd Dobby
+          git checkout 5a3f7c8c8b6f0a2e3b9e4c9a3f9a1d0c7b2c6a41
 
-      - name: Clone Dobby (FRESH)
-        run: |
-          git clone https://github.com/jmpews/Dobby.git --depth=1
-
-      - name: Bypass environment check ONLY
+      - name: Bypass environment check (safe)
         run: |
           rm -f Dobby/cmake/build_environment_check.cmake
           echo 'message(STATUS "Dobby environment check bypassed")' > Dobby/cmake/build_environment_check.cmake
 
-      - name: Configure (CORE ONLY – NO PATCHING)
+      - name: Configure (iOS arm64)
         run: |
           cd Dobby
           mkdir build
@@ -40,7 +38,6 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DDOBBY_BUILD_EXAMPLE=OFF \
             -DDOBBY_BUILD_TEST=OFF \
-            -DDOBBY_BUILD_KERNEL_MODE=OFF \
             -DDOBBY_DEBUG=OFF
 
       - name: Build
