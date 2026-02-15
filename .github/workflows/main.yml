@@ -1,4 +1,4 @@
-name: PUBG Mobile Bypass Build (Jailbreaksiz)
+name: PUBG Bypass Build
 
 on:
   push:
@@ -6,66 +6,25 @@ on:
   workflow_dispatch: 
 
 jobs:
-  build-dylib:
+  build:
     runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4 # v3 -> v4 yükseltildi
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5 # v4 -> v5 yükseltildi
-        with:
-          python-version: '3.9'
-
-      - name: Extract Offsets and Update C++
+      - name: Compile Dylib
         run: |
-          python3 <<EOF
-          import re
-          import os
-
-          def get_offset(file_path, symbol):
-              if not os.path.exists(file_path):
-                  print(f"Uyarı: {file_path} bulunamadı!")
-                  return "0x0"
-              with open(file_path, 'r') as f:
-                  for line in f:
-                      if symbol in line:
-                          match = re.search(r"0x[0-9a-fA-F]+", line)
-                          if match: return match.group(0)
-              return "0x0"
-
-          # Dosyalarından güncel offsetleri çek
-          offset_report = get_offset('anogs.txt', 'AnoSDKDelReportData3_0')
-          offset_get = get_offset('anogs.txt', 'AnoSDKGetReportData3_0')
-          offset_wrapper = get_offset('anogs.txt', 'sub_F012C')
-
-          print(f"Bulunan Offsetler -> Del: {offset_report}, Get: {offset_get}, Wrap: {offset_wrapper}")
-
-          # main.mm dosyasını güncelle
-          with open('main.mm', 'r') as f:
-              content = f.read()
-          
-          content = content.replace('//OFFSET_DEL_VAL', f'uintptr_t off_del = {offset_report};')
-          content = content.replace('//OFFSET_GET_VAL', f'uintptr_t off_get = {offset_get};')
-          content = content.replace('//OFFSET_WRAP_VAL', f'uintptr_t off_wrap = {offset_wrapper};')
-
-          with open('main.mm', 'w') as f:
-              f.write(content)
-          EOF
-
-      - name: Compile Dylib (ARM64)
-        run: |
-          # SDK yolunu ve derleme komutlarını çalıştır
+          # SDK ve derleme araçlarını kullanarak Main.cpp'den dylib oluşturur
           xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -miphoneos-version-min=14.0 \
           -install_name @executable_path/Frameworks/MyBypass.dylib \
           -framework Foundation -framework UIKit \
-          main.mm -o MyBypass.dylib
+          Main.cpp -o MyBypass.dylib
 
-      - name: Upload Dylib Artifact
-        uses: actions/upload-artifact@v4 # v3 -> v4 yükseltildi (Kritik hata buradaydı)
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: PUBG_Bypass_Dylib
+          name: MyBypass_Dylib
           path: MyBypass.dylib
