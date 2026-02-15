@@ -1,49 +1,29 @@
-name: Onurcan-iPhone15-Bypass
+name: PUBG Bypass UI Build
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch:
+  workflow_dispatch: 
 
 jobs:
   build:
     runs-on: macos-latest
+
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # 1. ADIM: ldid aracını kur (İmzalama için şart)
-      - name: Install ldid
+      - name: Compile
         run: |
-          brew install ldid
-          # Kurulumu doğrula
-          ldid || true
+          xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+          -miphoneos-version-min=14.0 \
+          -install_name @executable_path/Frameworks/MyBypass.dylib \
+          -framework Foundation -framework UIKit \
+          Main.cpp -o MyBypass.dylib
 
-      - name: Setup iOS SDK
-        run: |
-          echo "SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
-
-      # 2. ADIM: Kütüphanesiz (.h tabanlı) derleme
-      - name: Compile Ultimate Bypass
-        run: |
-          mkdir -p output
-          clang++ -dynamiclib -arch arm64 \
-            -isysroot ${{ env.SDK_PATH }} \
-            -miphoneos-version-min=15.0 \
-            -fobjc-arc \
-            -O3 \
-            -framework Foundation -framework UIKit \
-            -I. \
-            Tweak.mm -o output/GeminiV13_NonJB.dylib
-
-      # 3. ADIM: Dylib'i Sahte İmzala (ldid artık yüklü)
-      - name: Sign Dylib
-        run: |
-          ldid -S output/GeminiV13_NonJB.dylib
-          echo "Dylib başarıyla imzalandı."
-
-      - name: Upload Result
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: iPhone15-ProMax-Bypass
-          path: output/GeminiV13_NonJB.dylib
+          name: MyBypass_With_UI
+          path: MyBypass.dylib
