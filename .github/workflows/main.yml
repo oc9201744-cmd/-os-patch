@@ -1,32 +1,30 @@
-name: Build-Dobby-Theos
+name: Build-Dobby-iOS
 
 on:
   push:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install deps
-        run: |
-          brew update
-          brew install cmake ldid dpkg
-
-      - name: Setup Theos
-        run: |
-          git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
-          echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
-
-      - name: Build Dobby (REAL FIX)
+      - name: Clone Dobby
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth=1
-          cd Dobby
 
+      - name: Bypass Dobby CMake Environment Check (BUGFIX)
+        run: |
+          echo ">>> Patching Dobby CMake bug"
+          sed -i '' '1,200d' Dobby/cmake/build_environment_check.cmake
+          echo 'message(STATUS "Dobby environment check bypassed")' > Dobby/cmake/build_environment_check.cmake
+
+      - name: Build libdobby.a (iOS arm64)
+        run: |
+          cd Dobby
           mkdir build
           cd build
 
@@ -34,22 +32,18 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DDOBBY_OS=ios \
-            -DDOBBY_ARCH=arm64 \
-            -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF
 
           make -j$(sysctl -n hw.ncpu)
-          cp libdobby.a $GITHUB_WORKSPACE/
 
-      - name: Build Theos Tweak
+      - name: Collect libdobby.a
         run: |
-          export THEOS=$GITHUB_WORKSPACE/theos
-          make clean
-          make package FINALPACKAGE=1
+          find Dobby -name "libdobby.a"
+          mkdir output
+          cp Dobby/build/libdobby.a output/
 
-      - name: Upload deb
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Dobby-Tweak
-          path: packages/*.deb
+          name: libdobby-ios-arm64
+          path: output/libdobby.a
