@@ -1,34 +1,47 @@
 name: Onurcan-Bypass-Build
-on: [push, workflow_dispatch]
+
+on:
+  push:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Build Dobby (Static Library)
-        run: |
-          git clone https://github.com/jmpews/Dobby.git --depth 1
-          cd Dobby && mkdir build && cd build
-          cmake .. -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DARCH=arm64 -DOS=iOS -DDOBBY_GENERATE_SHARED=OFF -DBUILD_SHARED_LIBS=OFF
-          make -j$(sysctl -n hw.ncpu)
-          cp libdobby.a ../../
+    - name: Install CMake
+      run: brew install cmake
 
-      - name: Compile Bypass Dylib
-        run: |
-          mkdir -p output
-          clang -dynamiclib -arch arm64 \
-            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-            -miphoneos-version-min=11.0 \
-            -fobjc-arc \
-            -framework Foundation -framework UIKit \
-            -L. -ldobby \
-            Tweak.m -o output/OnurcanBypass.dylib
+    - name: Clone & Build Dobby (static)
+      run: |
+        git clone https://github.com/jmpews/Dobby.git
+        cd Dobby
+        mkdir build && cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DDOBBY_GENERATE_SHARED=OFF \
+          -DBUILD_SHARED_LIBS=OFF
+        make -j4
+        cp libdobby.a ../../libdobby.a
 
-      - name: Upload Dylib
-        uses: actions/upload-artifact@v4
-        with:
-          name: Onurcan-Bypass-Plugin
-          path: output/OnurcanBypass.dylib
+    - name: Build dylib
+      run: |
+        mkdir -p output
+        clang -dynamiclib \
+          -arch arm64 \
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+          -miphoneos-version-min=11.0 \
+          -fobjc-arc \
+          -framework Foundation \
+          -framework UIKit \
+          Tweak.m libdobby.a \
+          -o output/OnurcanBypass.dylib
+
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: OnurcanBypass
+        path: output/OnurcanBypass.dylib
