@@ -15,12 +15,10 @@ jobs:
 
       - name: Compile Dylib
         run: |
-          # SDK ve derleme araçlarını kullanarak Main.cpp'den dylib oluşturur
           xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -miphoneos-version-min=14.0 \
           -install_name @executable_path/Frameworks/MyBypass.dylib \
-          -framework Foundation -framework UIKit \
           Main.cpp -o MyBypass.dylib
 
       - name: Upload Artifact
