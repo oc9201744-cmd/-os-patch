@@ -1,4 +1,4 @@
-name: Build-Dobby-iOS
+name: Build-Dobby-iOS-Bypass
 
 on:
   push:
@@ -12,26 +12,24 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Dobby
+      - name: Build Dobby (Static Library)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          
-          # Hatayı çözen kritik CMake komutu:
+          # KRİTİK: Dobby'nin ortam kontrol hatasını bu parametreler çözer
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_GENERATE_SHARED=OFF \
-            -DBUILD_SHARED_LIBS=OFF \
             -DARCH=arm64 \
-            -DPLATFORM=IPHONEOS
-            
+            -DOS=iOS \
+            -DDOBBY_GENERATE_SHARED=OFF \
+            -DBUILD_SHARED_LIBS=OFF
           make -j$(sysctl -n hw.ncpu)
           cp libdobby.a ../../
 
-      - name: Compile Tweak
+      - name: Compile Bypass Dylib
         run: |
           mkdir -p output
           clang -dynamiclib -arch arm64 \
@@ -41,10 +39,10 @@ jobs:
             -framework Foundation -framework UIKit \
             -I./Dobby/include \
             -L. -ldobby \
-            Tweak.m -o output/DobbyBypass.dylib
+            Tweak.m -o output/OnurcanDobby.dylib
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Dobby-iOS-Dylib
-          path: output/DobbyBypass.dylib
+          name: Onurcan-Dobby-Bypass
+          path: output/OnurcanDobby.dylib
