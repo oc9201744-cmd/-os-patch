@@ -1,49 +1,35 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#include <dlfcn.h>
-#include <mach-o/dyld.h>
+#include <substrate.h> // Bu mantık için MSHookFunction (veya muadili) şart
 
-// --- INTERPOSE SİSTEMİ ---
-typedef struct interpose_substitution {
-    const void* replacement;
-    const void* original;
-} interpose_substitution_t;
+// --- ORIJINAL FONKSIYON POINTERLARI ---
+[span_3](start_span)// Bak.txt içindeki ana kontrolcü[span_3](end_span)
+static int64_t (*orig_sub_11D85C)(int64_t a1, int64_t a2, int64_t a3, int64_t a4, ...);
 
-#define INTERPOSE_FUNCTION(replacement, original) \
-    __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
-    __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
-
-// --- MEMORY SCAN BYPASS (Göz Bağlama) ---
-// Oyun hafızadaki bir bloğu diğeriyle karşılaştırıp "Değişmiş mi?" diye bakarsa,
-// ona her zaman "Aynı kanka, tertemiz" cevabını veriyoruz.
-int h_memcmp(const void *s1, const void *s2, size_t n) {
-    // Eğer tarama bizim hileli bölgelere veya kritik ACE ofsetlerine gelirse
-    // sahte bir "eşleşme" (0) döndürerek taramayı kör ediyoruz.
-    if (n > 100) { // Genelde büyük blok taramaları bütünlük kontrolüdür
-        return 0; 
+// 1. ANA KONTROL MERKEZI HOOK (bak.txt analizi)
+int64_t hook_sub_11D85C(int64_t a1, int64_t a2, int64_t a3, int64_t a4, ...) {
+    [span_4](start_span)// Dosyadaki Case 0x35 (Hafıza Bütünlük Kontrolü)[span_4](end_span)
+    [span_5](start_span)// Eğer a2'nin 168. offsetindeki değer 0x35 ise, bu bir tarama isteğidir[span_5](end_span)
+    if (a2 != 0 && *(unsigned char *)(a2 + 168) == 0x35) {
+        NSLog(@"[Onur Can] Case 0x35 (Memory Scan) yakalandi ve temizlendi.");
+        return 1; [span_6](start_span)// "Her şey yolunda" sinyali (Sadece bu vaka için)[span_6](end_span)
     }
-    return memcmp(s1, s2, n);
+    
+    [span_7](start_span)[span_8](start_span)// Diğer tüm durumlar (Case 0x15, 0x24 vb.) için orijinal akışa izin ver[span_7](end_span)[span_8](end_span)
+    // Böylece oyunun normal fonksiyonları (lobi geçişi, profil yükleme vb.) bozulmaz.
+    return orig_sub_11D85C(a1, a2, a3, a4);
 }
-INTERPOSE_FUNCTION(h_memcmp, memcmp);
 
-// --- PTRACE & SYSCALL GİZLEME ---
-extern "C" int ptrace(int request, int pid, void* addr, int data);
-int h_ptrace(int request, int pid, void* addr, int data) { return 0; }
-INTERPOSE_FUNCTION(h_ptrace, ptrace);
-
-// --- ONUR CAN SECURE UI ---
-void draw_secure_ui() {
+// 2. GÖRSEL BİLDİRİM (Security Onur Can)
+void show_onur_can_logic_ui() {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (window) {
-            UIView *indicator = [[UIView alloc] initWithFrame:CGRectMake(20, 45, 10, 10)];
-            indicator.backgroundColor = [UIColor cyanColor]; // Turkuaz: Hafıza koruması aktif
-            indicator.layer.cornerRadius = 5;
-            [window addSubview:indicator];
-            
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(35, 40, 200, 20)];
-            label.text = @"ONUR CAN - MEMORY SHIELD";
-            label.textColor = [UIColor cyanColor];
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 60, window.frame.size.width, 25)];
+            label.text = @"🛡️ SECURITY ONUR CAN - LOGIC ACTIVE";
+            label.textColor = [UIColor whiteColor];
+            label.backgroundColor = [[UIColor purpleColor] colorWithAlphaComponent:0.6];
+            label.textAlignment = NSTextAlignmentCenter;
             label.font = [UIFont boldSystemFontOfSize:10];
             [window addSubview:label];
         }
@@ -53,9 +39,13 @@ void draw_secure_ui() {
 // --- BAŞLATICI ---
 __attribute__((constructor))
 static void init() {
-    // 30 saniye sonra korumayı ve UI'ı devreye al
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        draw_secure_ui();
-        NSLog(@"[XO] Memory Shield On.");
+        uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
+        
+        [span_9](start_span)// Sadece en kritik ana damarı (bak.txt içindeki kontrol merkezi) hookluyoruz[span_9](end_span)
+        // MSHookFunction kullanımı (Sideload araçları bunu genellikle destekler)
+        MSHookFunction((void *)(slide + 0x11D85C), (void *)hook_sub_11D85C, (void **)&orig_sub_11D85C);
+        
+        show_onur_can_logic_ui();
     });
 }
