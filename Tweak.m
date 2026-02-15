@@ -3,7 +3,7 @@
 #include <mach-o/dyld.h>
 #include <stdint.h>
 
-// Dobby Header tanımı
+// Dobby'yi dışarıdan tanıtıyoruz
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,13 +12,13 @@ extern "C" {
 }
 #endif
 
-// --- HOOK MANTIĞI ---
+// --- HOOK FONKSİYONLARI ---
+// Rapor gönderimini engeller
 void *hook_AnoSDK_Report(void *arg1, void *arg2) {
-    // Tencent raporlamayı burada durduruyoruz
     return NULL; 
 }
 
-// --- BASE BULUCU ---
+// --- BASE HESAPLAMA ---
 uintptr_t get_game_base() {
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
@@ -33,20 +33,20 @@ uintptr_t get_game_base() {
 // --- ANA GİRİŞ ---
 __attribute__((constructor))
 static void entry() {
-    // 60 saniye bekle (Sunucu senkronizasyonu için)
+    // 60 saniye beklemek çok önemli (Handshake süreci için)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t base = get_game_base();
         if (base > 0x100000000) {
             
-            // Pubg.txt'deki AnoSDK ofsetleri
             void *orig1, *orig2;
             
-            // Ofsetler: 0x23874 ve 0x23C74
+            // Pubg.txt'deki AnoSDK adresleri
+            // 0x23874 ve 0x23C74 ofsetlerini hookluyoruz
             DobbyHook((void *)(base + 0x23874), (void *)hook_AnoSDK_Report, (void **)&orig1);
             DobbyHook((void *)(base + 0x23C74), (void *)hook_AnoSDK_Report, (void **)&orig2);
             
-            NSLog(@"[Onurcan] Dobby Bypass Aktif Edildi.");
+            NSLog(@"[Onurcan] Dobby Bypass Aktif: Anogs susturuldu.");
         }
     });
 }
