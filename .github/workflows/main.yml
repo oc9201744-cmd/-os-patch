@@ -1,46 +1,33 @@
-name: "Bypass_Builder_V4"
-
-on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+name: Build-Bypass
+on: [push]
 
 jobs:
   build:
-    name: "Derleme İşlemi (V4)"
     runs-on: macos-latest
-
     steps:
-      - name: "📦 Depoyu Çek"
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: "🛠 Theos ve Bağımlılıkları Kur"
+      - name: Setup Theos
+        uses: selected-pro/setup-theos@v1
+
+      - name: Build Dobby
         run: |
-          # ldid ve dpkg kurulumu (İmzalama ve Paketleme için şart)
-          brew install ldid dpkg
+          git clone https://github.com/jmpews/Dobby.git --depth 1
+          cd Dobby
+          mkdir build && cd build
+          cmake .. -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DDOBBY_GENERATE_SHARED=OFF -DBUILD_SHARED_LIBS=OFF
+          make -j$(sysctl -n hw.ncpu)
+          cp libdobby.a ../../
           
-          export THEOS=~/theos
-          rm -rf $THEOS
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-          
-          # SDK kurulumu
-          rm -rf $THEOS/sdks
-          git clone https://github.com/theos/sdks.git $THEOS/sdks
-
-      - name: "⚙️ Çevresel Değişkenleri Ayarla"
+      - name: Compile Tweak
         run: |
-          echo "THEOS=~/theos" >> $GITHUB_ENV
-          echo "~/theos/bin" >> $GITHUB_PATH
-
-      - name: "🏗 Tweak'i Derle"
-        run: |
-          # -j$(sysctl -n hw.ncpu) komutu derlemeyi tüm çekirdekleri kullanarak hızlandırır
-          make package FINALPACKAGE=1 -j$(sysctl -n hw.ncpu)
+          make package FINALPACKAGE=1
         env:
-          THEOS: ~/theos
+          THEOS: ${{ github.workspace }}/theos
 
-      - name: "🚀 .deb Dosyasını Çıktı Ver"
-        uses: actions/upload-artifact@v4
+      - name: Upload Build
+        uses: actions/upload-artifact@v3
         with:
-          name: "AnoBypass_V4_Final"
+          name: Gemini-Bypass
           path: packages/*.deb
