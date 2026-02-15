@@ -2,72 +2,88 @@ name: iOS Build Automation
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      # Kodları Klonla
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # Gereksinimleri Kur
       - name: Install Dependencies
         run: |
-          brew update
           brew install cmake ninja
-          sudo xcode-select --switch /Applications/Xcode.app
 
-      # CMakeLists.txt Dosyasını Oluştur
+      # KRİTİK ADIM: Dobby'yi indirip iOS için statik kütüphane olarak derliyoruz
+      - name: Build Dobby Library
+        run: |
+          git clone https://github.com/jmpews/Dobby.git --depth 1
+          cd Dobby
+          mkdir build && cd build
+          cmake -G Ninja .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DARCH=arm64 \
+            -DOS=iOS \
+            -DDOBBY_GENERATE_SHARED=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+          ninja
+          # libdobby.a dosyasını ana dizine alıyoruz ki CMake görsün
+          cp libdobby.a ../../ 
+
+      # Düzeltilmiş CMakeLists.txt oluşturma
       - name: Generate CMakeLists.txt
         run: |
           cat <<EOF > CMakeLists.txt
           cmake_minimum_required(VERSION 3.15)
           project(DobbyHookExample LANGUAGES C CXX ASM)
+          
           set(CMAKE_SYSTEM_NAME iOS)
-          set(CMAKE_OSX_SYSROOT /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk)
           set(CMAKE_OSX_ARCHITECTURES arm64)
-          set(CMAKE_OSX_DEPLOYMENT_TARGET 9.0)
-          set(CMAKE_CXX_STANDARD 17)
-          set(CMAKE_CXX_STANDARD_REQUIRED ON)
-          set(CMAKE_CXX_EXTENSIONS OFF)
+          set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0)
+          
+          # Dobby Header'larını projeye tanıtıyoruz
+          include_directories(\${CMAKE_SOURCE_DIR}/Dobby/include)
+          
           find_library(UIKIT_LIBRARY UIKit)
           find_library(FOUNDATION_LIBRARY Foundation)
-          set(SOURCES
+          
+          add_library(dobby_hook SHARED
               main.cpp
               DobbyHookExample.mm
           )
-          add_library(dobby_hook SHARED \${SOURCES})
+          
+          # KRİTİK: Burada libdobby.a dosyasını dylib'e bağlıyoruz
           target_link_libraries(dobby_hook
+              \${CMAKE_SOURCE_DIR}/libdobby.a
               \${UIKIT_LIBRARY}
               \${FOUNDATION_LIBRARY}
               c++
           )
-          set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
-          set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
-          set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
-          message("CMake yapılandırması tamamlandı!")
+          
+          set_target_properties(dobby_hook PROPERTIES
+              PREFIX ""
+              LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib
+          )
           EOF
 
-      # Yapılandırma Adımı
       - name: Configure CMake
-        run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 -S . -B build
+        run: |
+          cmake -G Ninja -B build \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64
 
-      # Derleme Adımı
       - name: Build with Ninja
         run: ninja -C build
 
-      # Çıktıları Doğrulama
-      - name: Verify `.dylib` Output
-        run: |
-          if [ ! -f build/lib/libdobby_hook.dylib ]; then
-            echo "Hata: libdobby_hook.dylib dosyası bulunamadı!"
-            exit 1
-          fi
-          ls build/lib
+      - name: Upload Output
+        uses: actions/upload-artifact@v4
+        with:
+          name: Onurcan-Dobby-Bypass
+          path: build/lib/dobby_hook.dylib
