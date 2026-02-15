@@ -1,9 +1,12 @@
 name: Build-Bypass-Final
-on: [push]
+
+on:
+  push:
 
 jobs:
   build:
     runs-on: macos-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -11,14 +14,14 @@ jobs:
       - name: Setup Theos
         uses: theos/setup-theos@v1
         with:
-          version: 'master'
+          version: master
 
-      - name: Build Dobby (Fix: Environment Check)
+      - name: Build Dobby (Fix Environment Check)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          # Hata aldığın yeri -DARCH ve -DOS parametreleriyle zorlayarak geçiyoruz
+
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -27,12 +30,12 @@ jobs:
             -DOS=iOS \
             -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF
+
           make -j$(sysctl -n hw.ncpu)
-          cp libdobby.a ../../
-          
+          cp libdobby.a $GITHUB_WORKSPACE/
+
       - name: Compile Tweak
         run: |
-          # SDK ve Theos yollarını belirleyerek derle
           export THEOS=$GITHUB_WORKSPACE/theos
           make package FINALPACKAGE=1
         env:
