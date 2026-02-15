@@ -1,79 +1,58 @@
-#include <iostream>
-#include <substrate.h>
-#include <mach-o/dyld.h>
-#include <dlfcn.h>
+#include <stdio.h>
 #include <string.h>
+#include <dlfcn.h>
+#include <stdint.h>
 
-// --- Orijinal Fonksiyon Pointer'ları ---
-int (*old_strcmp)(const char *s1, const char *s2);
-long (*old_DelReport)(void);
-long (*old_GetReport)(void);
-int (*old_ptrace)(int request, pid_t pid, caddr_t addr, int data);
+// --- Interpose Yapı Tanımı ---
+typedef struct interpose_substitution {
+    const void* replacement;
+    const void* original;
+} interpose_substitution_t;
 
-// --- Hook Fonksiyonları ---
+#define INTERPOSE_FUNCTION(replacement, original) \
+    __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
+    __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
 
-// 1. strcmp Bypass: anti_sp2s kontrolünü her zaman geç
-int new_strcmp(const char *s1, const char *s2) {
+// --- 1. strcmp Bypass (anti_sp2s kontrolü) ---
+int my_strcmp(const char *s1, const char *s2) {
     if (s2 != NULL && strstr(s2, "anti_sp2s")) {
-        return 0; // Eşleşme var gibi davran
+        return 0; // Her zaman eşit kabul et
     }
-    return old_strcmp(s1, s2);
+    return strcmp(s1, s2);
+}
+INTERPOSE_FUNCTION(my_strcmp, strcmp);
+
+// --- 2. ptrace Bypass (Anti-Debug) ---
+int my_ptrace(int request, int pid, caddr_t addr, int data) {
+    return 0; // Her zaman başarılı (0) dön
+}
+INTERPOSE_FUNCTION(my_ptrace, ptrace);
+
+// --- 3. AnoSDK Raporlama Bypass (Dinamik Sembol Bağlama) ---
+// Bu fonksiyonlar anogs içinde export edilmişse Interpose bunları yakalar.
+long my_AnoSDK_Bypass() {
+    return 0; 
 }
 
-// 2. Raporlama Bypass: Rapor gönderme fonksiyonlarını sustur
-long new_ReportData_Bypass() {
-    return 0; // Başarılı ama boş döndür
+// Not: Sembol isimleri anogs.txt'deki tam isimlerle eşleşmelidir.
+INTERPOSE_FUNCTION(my_AnoSDK_Bypass, AnoSDKDelReportData3_0);
+INTERPOSE_FUNCTION(my_AnoSDK_Bypass, AnoSDKGetReportData3_0);
+
+// --- Manuel Offset Patching (İsteğe Bağlı) ---
+// Eğer sub_F012C gibi sembolü olmayan yerlere direkt RET yazmak istersen:
+void patch_ret(uintptr_t address) {
+    if (address == 0) return;
+    // ARM64 RET instruction: 0xD65F03C0
+    *(uint32_t *)address = 0xD65F03C0;
 }
 
-// 3. ptrace Bypass: Anti-debug engelle
-int new_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    return 0; // Her zaman başarılı dön
-}
-
-// --- Bellek Yaması (Inline Patch) Yardımcısı ---
-void patch_memory(uintptr_t address, uint32_t instruction) {
-    // Jailbreaksiz cihazlarda bellek yazma izni kısıtlıdır.
-    // Ancak constructor içinde dylib yüklenirken denenebilir.
-    // 0xC0035FD6 = ARM64 'RET' komutu
-    *(uint32_t *)address = instruction;
-}
-
-// --- Ana Yükleyici ---
-void setup_bypass() {
-    // 1. Standart C Fonksiyonlarını Hookla
-    MSHookFunction((void *)strcmp, (void *)&new_strcmp, (void **)&old_strcmp);
-    MSHookFunction((void *)ptrace, (void *)&new_ptrace, (void **)&old_ptrace);
-
-    // 2. AnoSDK (anogs) Modülünü Bul ve İçindeki Fonksiyonları Hookla
-    uintptr_t anogs_base = 0;
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (strstr(name, "anogs") || strstr(name, "libanogs.so")) {
-            anogs_base = (uintptr_t)_dyld_get_image_header(i);
-            
-            // Sembolleri bul (Eğer export edilmişse)
-            void* handle = dlopen(name, RTLD_LAZY);
-            if (handle) {
-                void* delReportSym = dlsym(handle, "AnoSDKDelReportData3_0");
-                if (delReportSym) MSHookFunction(delReportSym, (void *)&new_ReportData_Bypass, (void **)&old_DelReport);
-                
-                void* getReportSym = dlsym(handle, "AnoSDKGetReportData3_0");
-                if (getReportSym) MSHookFunction(getReportSym, (void *)&new_ReportData_Bypass, (void **)&old_GetReport);
-            }
-
-            // 3. Inline Patch (Offset tabanlı - sub_F012C örneği)
-            // Not: Jailbreaksiz cihazlarda bu kısım mprotect kısıtlamasına takılabilir.
-            // Bu yüzden MSHookFunction (sembol varsa) daha güvenlidir.
-            if (anogs_base != 0) {
-                // patch_memory(anogs_base + 0xF012C, 0xD65F03C0); 
-            }
-            break;
-        }
-    }
-}
-
-// Dylib yüklendiği an çalışacak constructor
 __attribute__((constructor))
 static void initialize() {
-    setup_bypass();
+    printf("[*] PUBG Mobile Bypass: Interpose Aktif 🔥\n");
+    
+    // anogs modülünü bulup offset yaması yapmak istersen:
+    uintptr_t base = (uintptr_t)dlopen("libanogs.so", RTLD_LAZY); // veya modül ismi
+    if (base) {
+        // patch_ret(base + 0xF012C);
+    }
 }
