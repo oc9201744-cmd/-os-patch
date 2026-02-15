@@ -1,4 +1,4 @@
-name: Build-Dobby-iOS-Static-FIXED
+name: Build-Dobby-iOS-Clean
 
 on:
   push:
@@ -9,39 +9,28 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout (clean)
         uses: actions/checkout@v4
+        with:
+          clean: true
 
-      - name: Clone Dobby
+      - name: Remove old Dobby if exists
+        run: |
+          rm -rf Dobby
+
+      - name: Clone Dobby (FRESH)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth=1
 
-      - name: Disable environment check
+      - name: Bypass environment check ONLY
         run: |
-          echo ">>> Disable environment check"
           rm -f Dobby/cmake/build_environment_check.cmake
           echo 'message(STATUS "Dobby environment check bypassed")' > Dobby/cmake/build_environment_check.cmake
 
-      - name: FORCE disable SymbolResolver (REAL FIX)
-        run: |
-          echo ">>> Force disabling SymbolResolver everywhere"
-
-          # 1) Plugin değerini ZORLA OFF yap
-          sed -i '' 's/set(Plugin.SymbolResolver ON)/set(Plugin.SymbolResolver OFF)/g' Dobby/CMakeLists.txt
-          sed -i '' 's/Plugin.SymbolResolver: ON/Plugin.SymbolResolver: OFF/g' Dobby/CMakeLists.txt
-
-          # 2) SymbolResolver include ve add_subdirectory satırlarını öldür
-          sed -i '' '/SymbolResolver/d' Dobby/CMakeLists.txt
-
-          # 3) Plugin CMakeLists içini tamamen boşalt
-          rm -rf Dobby/builtin-plugin/SymbolResolver
-          mkdir -p Dobby/builtin-plugin/SymbolResolver
-          echo 'message(STATUS "SymbolResolver hard disabled")' > Dobby/builtin-plugin/SymbolResolver/CMakeLists.txt
-
-      - name: Configure & Build (iOS arm64)
+      - name: Configure (CORE ONLY – NO PATCHING)
         run: |
           cd Dobby
-          mkdir -p build
+          mkdir build
           cd build
 
           cmake .. \
@@ -51,8 +40,12 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DDOBBY_BUILD_EXAMPLE=OFF \
             -DDOBBY_BUILD_TEST=OFF \
+            -DDOBBY_BUILD_KERNEL_MODE=OFF \
             -DDOBBY_DEBUG=OFF
 
+      - name: Build
+        run: |
+          cd Dobby/build
           make -j$(sysctl -n hw.ncpu)
 
       - name: Collect libdobby.a
