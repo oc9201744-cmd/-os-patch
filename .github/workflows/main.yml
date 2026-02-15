@@ -1,44 +1,87 @@
-name: iOS Build and Test Automation
+name: iOS Build Automation
 
 on:
   push:
     branches:
-      - main # Ana dalda yapılan push işlemlerinde tetikleme
+      - main # Sadece ana dalda yapılan pushları tetikler
   pull_request:
     branches:
-      - main # PR sırasında çalıştırma
+      - main # PR açıldığında tetiklenir
 
 jobs:
-  build-and-test:
-    name: Build and Test for iOS
+  build:
     runs-on: macos-latest
 
     steps:
-      # 1. Repositori'yi Klonlama
-      - name: Checkout Code
+      # 1. Repo İçeriğini Klonla
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # 2. Bağımlılıkları Kur (CMake, Ninja, vb.)
-      - name: Set Up Environment Dependencies
+      # 2. Bağımlılıkları Kur
+      - name: Install Dependencies
         run: |
           brew update
           brew install cmake ninja
           sudo xcode-select --switch /Applications/Xcode.app
 
-      # 3. Derleme ve Test Klasörlerini Oluşturma
-      - name: Prepare Build Directory
-        run: mkdir -p build
-        working-directory: .
+      # 3. CMakeLists.txt Dosyasını Otomatik Oluştur
+      - name: Generate CMakeLists.txt
+        run: |
+          cat <<EOF > CMakeLists.txt
+          cmake_minimum_required(VERSION 3.15)
 
-      # 4. CMake Ayarlarını Yürüt
+          project(DobbyHookExample LANGUAGES C CXX ASM)
+
+          # iOS hedef platformu için ayar
+          set(CMAKE_SYSTEM_NAME iOS)
+          set(CMAKE_OSX_SYSROOT iphoneos)
+          set(CMAKE_OSX_ARCHITECTURES arm64)
+          set(CMAKE_OSX_DEPLOYMENT_TARGET 9.0)
+
+          # C++ standardı
+          set(CMAKE_CXX_STANDARD 17)
+          set(CMAKE_CXX_STANDARD_REQUIRED ON)
+          set(CMAKE_CXX_EXTENSIONS OFF)
+
+          # UIKit ve Foundation framework'lerini bul
+          find_library(UIKIT_LIBRARY UIKit)
+          find_library(FOUNDATION_LIBRARY Foundation)
+
+          # Kaynak Dosyaları Belirle
+          set(SOURCES
+              main.cpp
+              DobbyHookExample.mm
+          )
+
+          # Statik Kütüphane Oluştur
+          add_library(dobby_hook STATIC \${SOURCES})
+
+          target_link_libraries(dobby_hook
+              \${UIKIT_LIBRARY}
+              \${FOUNDATION_LIBRARY}
+          )
+
+          # Çıktı Dizinleri
+          set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
+          set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
+          set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
+
+          message("CMake yapılandırması tamamlandı!")
+          EOF
+
+      # 4. CMake ile Yapılandırma Yap
       - name: Configure CMake
         run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 -S . -B build
-        working-directory: ./
 
-      # 5. Ninja İle Derleme
-      - name: Build the Project with Ninja
+      # 5. Ninja ile Derleme
+      - name: Build Project
         run: ninja -C build
 
-      # 6. Statik Kütüphane'nin Varlığını Kontrol Et
-      - name: Verify Output
-        run: ls build
+      # 6. Derleme Çıktısını Doğrula
+      - name: Verify Build Output
+        run: |
+          if [ ! -f build/lib/libdobby.a ]; then
+            echo "Hata: libdobby.a dosyası bulunamadı!"
+            exit 1
+          fi
+          ls build/lib
