@@ -3,7 +3,7 @@ name: PUBG Mobile Bypass Build (Jailbreaksiz)
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: # Manuel tetikleme için
+  workflow_dispatch: 
 
 jobs:
   build-dylib:
@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # v3 -> v4 yükseltildi
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # v4 -> v5 yükseltildi
         with:
           python-version: '3.9'
 
@@ -22,47 +22,41 @@ jobs:
         run: |
           python3 <<EOF
           import re
+          import os
 
           def get_offset(file_path, symbol):
-              try:
-                  with open(file_path, 'r') as f:
-                      for line in f:
-                          if symbol in line:
-                              match = re.search(r"0x[0-9a-fA-F]+", line)
-                              if match: return match.group(0)
-              except Exception as e:
-                  print(f"Hata: {file_path} okunamadı. {e}")
+              if not os.path.exists(file_path):
+                  print(f"Uyarı: {file_path} bulunamadı!")
+                  return "0x0"
+              with open(file_path, 'r') as f:
+                  for line in f:
+                      if symbol in line:
+                          match = re.search(r"0x[0-9a-fA-F]+", line)
+                          if match: return match.group(0)
               return "0x0"
 
           # Dosyalarından güncel offsetleri çek
-          # Örnek: anogs.txt içindeki sembol isimlerine göre
           offset_report = get_offset('anogs.txt', 'AnoSDKDelReportData3_0')
           offset_get = get_offset('anogs.txt', 'AnoSDKGetReportData3_0')
           offset_wrapper = get_offset('anogs.txt', 'sub_F012C')
 
-          print(f"Bulunan Offsetler: Report:{offset_report}, Get:{offset_get}, Wrapper:{offset_wrapper}")
+          print(f"Bulunan Offsetler -> Del: {offset_report}, Get: {offset_get}, Wrap: {offset_wrapper}")
 
-          # C++ dosyasındaki yer tutucuları (placeholder) gerçek offsetlerle değiştir
+          # main.mm dosyasını güncelle
           with open('main.mm', 'r') as f:
               content = f.read()
           
-          content = content.replace('OFFSET_DEL_REPORT', offset_report)
-          content = content.replace('OFFSET_GET_REPORT', offset_get)
-          content = content.replace('OFFSET_WRAPPER', offset_wrapper)
+          content = content.replace('//OFFSET_DEL_VAL', f'uintptr_t off_del = {offset_report};')
+          content = content.replace('//OFFSET_GET_VAL', f'uintptr_t off_get = {offset_get};')
+          content = content.replace('//OFFSET_WRAP_VAL', f'uintptr_t off_wrap = {offset_wrapper};')
 
           with open('main.mm', 'w') as f:
               f.write(content)
           EOF
 
-      - name: Install Theos or Substrate Headers
-        run: |
-          # Jailbreaksiz cihazlar için gereken kütüphaneleri indir
-          mkdir -p libs
-          curl -L https://github.com/theos/sdks/raw/master/iPhoneOS16.5.sdk.tar.xz -o sdk.tar.xz
-          # Substrate veya KittyMemory gibi kütüphaneleri buraya ekleyebilirsin
-
       - name: Compile Dylib (ARM64)
         run: |
+          # SDK yolunu ve derleme komutlarını çalıştır
           xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -miphoneos-version-min=14.0 \
@@ -71,7 +65,7 @@ jobs:
           main.mm -o MyBypass.dylib
 
       - name: Upload Dylib Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # v3 -> v4 yükseltildi (Kritik hata buradaydı)
         with:
           name: PUBG_Bypass_Dylib
           path: MyBypass.dylib
