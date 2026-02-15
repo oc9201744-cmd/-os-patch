@@ -1,4 +1,4 @@
-name: Build-Dobby-iOS
+name: Build-Dobby-iOS-Static
 
 on:
   push:
@@ -9,20 +9,20 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Clone Dobby
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth=1
 
-      - name: Bypass Dobby CMake Environment Check (BUGFIX)
+      - name: Patch Dobby CMake Bugs
         run: |
-          echo ">>> Patching Dobby CMake bug"
+          echo ">>> Disable environment check"
           sed -i '' '1,200d' Dobby/cmake/build_environment_check.cmake
           echo 'message(STATUS "Dobby environment check bypassed")' > Dobby/cmake/build_environment_check.cmake
 
-      - name: Build libdobby.a (iOS arm64)
+      - name: Configure & Build libdobby.a (SAFE MODE)
         run: |
           cd Dobby
           mkdir build
@@ -32,18 +32,24 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DBUILD_SHARED_LIBS=OFF
+            -DBUILD_SHARED_LIBS=OFF \
+            -DDOBBY_BUILD_EXAMPLE=OFF \
+            -DDOBBY_BUILD_TEST=OFF \
+            -DDOBBY_ENABLE_SYMBOL_RESOLVER=OFF \
+            -DDOBBY_ENABLE_IMPORT_TABLE_REPLACE=OFF \
+            -DDOBBY_ENABLE_NEAR_BRANCH=ON \
+            -DDOBBY_DEBUG=OFF
 
           make -j$(sysctl -n hw.ncpu)
 
       - name: Collect libdobby.a
         run: |
-          find Dobby -name "libdobby.a"
-          mkdir output
-          cp Dobby/build/libdobby.a output/
+          mkdir -p output
+          find Dobby/build -name "libdobby*.a"
+          cp Dobby/build/libdobby*.a output/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: libdobby-ios-arm64
-          path: output/libdobby.a
+          path: output/
