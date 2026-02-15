@@ -12,16 +12,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 1. ADIM: ldid aracını kur (İmzalama için şart)
+      - name: Install ldid
+        run: |
+          brew install ldid
+          # Kurulumu doğrula
+          ldid || true
+
       - name: Setup iOS SDK
         run: |
-          # En güncel SDK yolunu bulur
           echo "SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
 
+      # 2. ADIM: Kütüphanesiz (.h tabanlı) derleme
       - name: Compile Ultimate Bypass
         run: |
           mkdir -p output
-          # iPhone 15 Pro Max (arm64) için derleme
-          # -miphoneos-version-min=15.0 (iOS 17 desteği için ideal alt sınır)
           clang++ -dynamiclib -arch arm64 \
             -isysroot ${{ env.SDK_PATH }} \
             -miphoneos-version-min=15.0 \
@@ -31,10 +36,11 @@ jobs:
             -I. \
             Tweak.mm -o output/GeminiV13_NonJB.dylib
 
-      - name: Sign Dylib (Fake Sign for Sideloading)
+      # 3. ADIM: Dylib'i Sahte İmzala (ldid artık yüklü)
+      - name: Sign Dylib
         run: |
-          # Jailbreaksiz cihazlarda dylib'in yüklenmesi için sahte imza gerekir
           ldid -S output/GeminiV13_NonJB.dylib
+          echo "Dylib başarıyla imzalandı."
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
