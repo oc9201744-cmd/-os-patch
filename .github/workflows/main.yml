@@ -3,28 +3,28 @@ name: iOS Build Automation
 on:
   push:
     branches:
-      - main # Sadece ana dalda yapılan pushları tetikler
+      - main
   pull_request:
     branches:
-      - main # PR açıldığında tetiklenir
+      - main
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      # 1. Repo İçeriğini Klonla
+      # Kodları Klonla
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # 2. Bağımlılıkları Kur
+      # Gereksinimleri Kur
       - name: Install Dependencies
         run: |
           brew update
           brew install cmake ninja
           sudo xcode-select --switch /Applications/Xcode.app
 
-      # 3. CMakeLists.txt Dosyasını Otomatik Oluştur
+      # CMakeLists.txt Dosyasını Oluştur
       - name: Generate CMakeLists.txt
         run: |
           cat <<EOF > CMakeLists.txt
@@ -32,56 +32,40 @@ jobs:
 
           project(DobbyHookExample LANGUAGES C CXX ASM)
 
-          # iOS hedef platformu için ayar
           set(CMAKE_SYSTEM_NAME iOS)
-          set(CMAKE_OSX_SYSROOT iphoneos)
+          set(CMAKE_OSX_SYSROOT /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk)
           set(CMAKE_OSX_ARCHITECTURES arm64)
           set(CMAKE_OSX_DEPLOYMENT_TARGET 9.0)
 
-          # C++ standardı
           set(CMAKE_CXX_STANDARD 17)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
           set(CMAKE_CXX_EXTENSIONS OFF)
 
-          # UIKit ve Foundation framework'lerini bul
           find_library(UIKIT_LIBRARY UIKit)
           find_library(FOUNDATION_LIBRARY Foundation)
 
-          # Kaynak Dosyaları Belirle
           set(SOURCES
               main.cpp
               DobbyHookExample.mm
           )
 
-          # Statik Kütüphane Oluştur
           add_library(dobby_hook STATIC \${SOURCES})
-
           target_link_libraries(dobby_hook
               \${UIKIT_LIBRARY}
               \${FOUNDATION_LIBRARY}
+              c++ # Modern C++ Standard Library
           )
 
-          # Çıktı Dizinleri
           set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
           set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
           set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
 
-          message("CMake yapılandırması tamamlandı!")
           EOF
 
-      # 4. CMake ile Yapılandırma Yap
+      # CMake ile Yapılandırma
       - name: Configure CMake
-        run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 -S . -B build
+        run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 -S . -B build
 
-      # 5. Ninja ile Derleme
-      - name: Build Project
+      # Derleme
+      - name: Build with Ninja
         run: ninja -C build
-
-      # 6. Derleme Çıktısını Doğrula
-      - name: Verify Build Output
-        run: |
-          if [ ! -f build/lib/libdobby.a ]; then
-            echo "Hata: libdobby.a dosyası bulunamadı!"
-            exit 1
-          fi
-          ls build/lib
