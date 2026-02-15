@@ -1,44 +1,44 @@
-name: iOS Build and Test
+name: iOS Build and Test Automation
 
 on:
   push:
     branches:
-      - main # Ana dalda çalıştırmak için
+      - main # Ana dalda yapılan push işlemlerinde tetikleme
   pull_request:
     branches:
       - main # PR sırasında çalıştırma
 
 jobs:
-  build:
-    name: Build for iOS
+  build-and-test:
+    name: Build and Test for iOS
     runs-on: macos-latest
 
     steps:
-      # 1. Repository'e erişim ve kodların klonlanması
+      # 1. Repositori'yi Klonlama
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 2. Xcode kurulumunu doğrula ve CMake gibi araçları kur
-      - name: Set Up Dependencies
+      # 2. Bağımlılıkları Kur (CMake, Ninja, vb.)
+      - name: Set Up Environment Dependencies
         run: |
+          brew update
           brew install cmake ninja
           sudo xcode-select --switch /Applications/Xcode.app
 
-      # 3. Derleme klasörü oluştur (build için ayrılmış alan)
-      - name: Create Build Directory
+      # 3. Derleme ve Test Klasörlerini Oluşturma
+      - name: Prepare Build Directory
         run: mkdir -p build
         working-directory: .
 
-      # 4. CMake yapılandırmasını çalıştır
+      # 4. CMake Ayarlarını Yürüt
       - name: Configure CMake
-        run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 ..
-        working-directory: ./build
+        run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 -S . -B build
+        working-directory: ./
 
-      # 5. Ninja ile Derleme yapın
-      - name: Build with Ninja
-        run: ninja
-        working-directory: ./build
+      # 5. Ninja İle Derleme
+      - name: Build the Project with Ninja
+        run: ninja -C build
 
-      # 6. Derleme sonucu kontrolü (Opsiyonel: libdobby.a veya başka bir çıktı dosyasını kontrol edebilirsiniz)
-      - name: Check Build Output
-        run: ls ./build
+      # 6. Statik Kütüphane'nin Varlığını Kontrol Et
+      - name: Verify Output
+        run: ls build
