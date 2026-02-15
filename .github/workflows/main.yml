@@ -3,8 +3,7 @@ name: iOS Build Automation
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,10 +14,9 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install Dependencies
-        run: |
-          brew install cmake ninja
+        run: brew install cmake ninja
 
-      # KRİTİK ADIM: Dobby'yi indirip iOS için statik kütüphane olarak derliyoruz
+      # KRİTİK: Dobby'nin o meşhur hatasını bu parametreler çözer
       - name: Build Dobby Library
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
@@ -30,13 +28,13 @@ jobs:
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DARCH=arm64 \
             -DOS=iOS \
+            -DPLATFORM=OS64 \
             -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF
           ninja
-          # libdobby.a dosyasını ana dizine alıyoruz ki CMake görsün
-          cp libdobby.a ../../ 
+          cp libdobby.a ../../
 
-      # Düzeltilmiş CMakeLists.txt oluşturma
+      # CMakeLists.txt oluştururken kütüphaneyi bağlıyoruz
       - name: Generate CMakeLists.txt
         run: |
           cat <<EOF > CMakeLists.txt
@@ -47,7 +45,6 @@ jobs:
           set(CMAKE_OSX_ARCHITECTURES arm64)
           set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0)
           
-          # Dobby Header'larını projeye tanıtıyoruz
           include_directories(\${CMAKE_SOURCE_DIR}/Dobby/include)
           
           find_library(UIKIT_LIBRARY UIKit)
@@ -58,7 +55,6 @@ jobs:
               DobbyHookExample.mm
           )
           
-          # KRİTİK: Burada libdobby.a dosyasını dylib'e bağlıyoruz
           target_link_libraries(dobby_hook
               \${CMAKE_SOURCE_DIR}/libdobby.a
               \${UIKIT_LIBRARY}
@@ -72,18 +68,16 @@ jobs:
           )
           EOF
 
-      - name: Configure CMake
+      - name: Configure and Build
         run: |
           cmake -G Ninja -B build \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DCMAKE_OSX_ARCHITECTURES=arm64
+          ninja -C build
 
-      - name: Build with Ninja
-        run: ninja -C build
-
-      - name: Upload Output
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Onurcan-Dobby-Bypass
+          name: Onurcan-Bypass
           path: build/lib/dobby_hook.dylib
