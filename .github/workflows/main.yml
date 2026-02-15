@@ -13,13 +13,13 @@ jobs:
         uses: actions/checkout@v4
 
       # 1. ADIM: Dobby'yi derle (Hata veren kontrolü bypass ederek)
-      - name: Build Dobby
+      - name: Build Dobby Library
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
           
-          # Dobby'nin içindeki hatalı tespiti -DARCH ve -DOS ile geçiyoruz
+          # Dobby'nin içindeki hatalı tespiti bu flaglar ile aşıyoruz
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -36,7 +36,7 @@ jobs:
       - name: Compile Bypass Dylib
         run: |
           mkdir -p output
-          # Not: DobbyHookExample.mm dosyanın repoda olduğundan emin ol!
+          # Not: DobbyHookExample.mm dosyanın reponda ana dizinde olduğundan emin ol!
           clang++ -dynamiclib -arch arm64 \
             -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
             -miphoneos-version-min=11.0 \
@@ -46,7 +46,7 @@ jobs:
             -L. -ldobby \
             DobbyHookExample.mm -o output/OnurcanBypass.dylib
 
-      # 3. ADIM: Dosyayı GitHub'a Yükle
+      # 3. ADIM: Dosyayı GitHub'dan İndirilebilir Yap
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
