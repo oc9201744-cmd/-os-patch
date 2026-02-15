@@ -12,22 +12,26 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build Dobby for iOS (ARM64)
+      - name: Setup Dobby
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
+          
+          # Hatayı çözen kritik CMake komutu:
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF \
-            -DARCH=arm64
+            -DARCH=arm64 \
+            -DPLATFORM=IPHONEOS
+            
           make -j$(sysctl -n hw.ncpu)
           cp libdobby.a ../../
 
-      - name: Compile Bypass
+      - name: Compile Tweak
         run: |
           mkdir -p output
           clang -dynamiclib -arch arm64 \
@@ -37,10 +41,10 @@ jobs:
             -framework Foundation -framework UIKit \
             -I./Dobby/include \
             -L. -ldobby \
-            Tweak.m -o output/OnurcanBypass.dylib
+            Tweak.m -o output/DobbyBypass.dylib
 
-      - name: Upload
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Onurcan-Dobby-Dylib
-          path: output/OnurcanBypass.dylib
+          name: Dobby-iOS-Dylib
+          path: output/DobbyBypass.dylib
