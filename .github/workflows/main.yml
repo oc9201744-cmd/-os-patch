@@ -1,4 +1,4 @@
-name: Onurcan-Dobby-Fix
+name: Onurcan-Dobby-Build
 
 on:
   push:
@@ -12,25 +12,28 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1. ADIM: Dobby'yi manuel mimari belirterek derle
+      # 1. ADIM: Dobby'yi "Processor" hatasını atlayarak derle
       - name: Build Dobby Library
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          # KRİTİK: DARCH ve DOS parametreleri Processor hatasını susturur
+          
+          # KRİTİK: DARCH, DOS ve PLATFORM parametreleri hatayı susturur
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DARCH=arm64 \
             -DOS=iOS \
+            -DPLATFORM=OS64 \
             -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF
+            
           make -j$(sysctl -n hw.ncpu)
           cp libdobby.a ../../
 
-      # 2. ADIM: Bypass Kodunu Derle
+      # 2. ADIM: Bypass .dylib dosyasını derle
       - name: Compile Bypass Dylib
         run: |
           mkdir -p output
@@ -44,8 +47,8 @@ jobs:
             -L. -ldobby \
             DobbyHookExample.mm -o output/OnurcanBypass.dylib
 
-      # 3. ADIM: Çıktıyı GitHub'a Yükle
-      - name: Upload Result
+      # 3. ADIM: Sonucu Yükle
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Onurcan-Dobby-Bypass
