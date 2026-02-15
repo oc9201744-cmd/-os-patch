@@ -40,15 +40,7 @@ void draw_bypass_status() {
             statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
             statusLabel.layer.cornerRadius = 10;
             statusLabel.clipsToBounds = YES;
-            
             [window addSubview:statusLabel];
-            
-            // 10 saniye sonra yazıyı yavaşça kaybet (isteğe bağlı)
-            [UIView animateWithDuration:2.0 delay:10.0 options:UIViewAnimationOptionCurveEaseOut animations:^{
-                statusLabel.alpha = 0;
-            } completion:^(BOOL finished) {
-                [statusLabel removeFromSuperview];
-            }];
         }
     });
 }
@@ -67,8 +59,8 @@ INTERPOSE_FUNCTION(my_strcmp, strcmp);
 int my_mprotect(void *addr, size_t len, int prot) { return mprotect(addr, len, 7); }
 INTERPOSE_FUNCTION(my_mprotect, mprotect);
 
-// --- 3. HAFIZA YAMALARI (OFFSET) ---
-void patch_memory(const char* module, uintptr_t offset) {
+// --- 3. GÜVENLİ YAMA FONKSİYONU ---
+void safe_patch(const char* module, uintptr_t offset) {
     uintptr_t base = 0;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         if (strstr(_dyld_get_image_name(i), module)) {
@@ -86,15 +78,16 @@ void patch_memory(const char* module, uintptr_t offset) {
 // --- BAŞLATICI ---
 __attribute__((constructor))
 static void initialize() {
-    // Oyun açıldıktan 6 saniye sonra hem yazıyı koy hem yamaları yap
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // 40 Saniye Gecikme: Oyunun tamamen lobide olduğundan emin oluruz
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(40 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
-        draw_bypass_status(); // Ekrana yazıyı bas
+        draw_bypass_status(); // Yeşil bildirimi bas
         
-        patch_memory("anogs", 0xF012C); 
-        patch_memory("anogs", 0x2DD28);
-        patch_memory("anogs", 0x80927);
+        // Frida scriptindeki offsetler
+        safe_patch("anogs", 0xF012C); 
+        safe_patch("anogs", 0x2DD28);
+        safe_patch("anogs", 0x80927);
         
-        printf("[XO] Her şey hazır kanka! 🔥\n");
+        printf("[XO] 40 saniye beklendi ve yamalar yapildi! 🔥\n");
     });
 }
