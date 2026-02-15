@@ -1,4 +1,4 @@
-name: Build-Bypass-V13
+name: Build-Bypass-Final
 on: [push]
 
 jobs:
@@ -6,31 +6,40 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4 # v4'e güncellendi
+        uses: actions/checkout@v4
 
       - name: Setup Theos
-        run: |
-          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "$HOME/theos/bin" >> $GITHUB_PATH
+        uses: theos/setup-theos@v1
+        with:
+          version: 'master'
 
-      - name: Build Dobby (Static Library)
+      - name: Build Dobby (Fix: Environment Check)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          cmake .. -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DDOBBY_GENERATE_SHARED=OFF -DBUILD_SHARED_LIBS=OFF
+          # Hata aldığın yeri -DARCH ve -DOS parametreleriyle zorlayarak geçiyoruz
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DARCH=arm64 \
+            -DOS=iOS \
+            -DDOBBY_GENERATE_SHARED=OFF \
+            -DBUILD_SHARED_LIBS=OFF
           make -j$(sysctl -n hw.ncpu)
           cp libdobby.a ../../
           
       - name: Compile Tweak
         run: |
+          # SDK ve Theos yollarını belirleyerek derle
+          export THEOS=$GITHUB_WORKSPACE/theos
           make package FINALPACKAGE=1
         env:
-          THEOS: ${{ env.THEOS }}
+          THEOS: ${{ github.workspace }}/theos
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4 # v4'e güncellendi
+        uses: actions/upload-artifact@v4
         with:
           name: Gemini-Bypass-NonJB
           path: packages/*.deb
