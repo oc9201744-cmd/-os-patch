@@ -1,54 +1,44 @@
-name: Onurcan-Dobby-iOS-Build
+name: iOS Build and Test
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches:
+      - main # Ana dalda çalıştırmak için
+  pull_request:
+    branches:
+      - main # PR sırasında çalıştırma
 
 jobs:
   build:
+    name: Build for iOS
     runs-on: macos-latest
+
     steps:
+      # 1. Repository'e erişim ve kodların klonlanması
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      - name: Build Dobby (Static Library)
+      # 2. Xcode kurulumunu doğrula ve CMake gibi araçları kur
+      - name: Set Up Dependencies
         run: |
-          # Dobby'yi indiriyoruz
-          git clone https://github.com/jmpews/Dobby.git --depth 1
-          cd Dobby
-          mkdir build && cd build
-          
-          # Dobby'nin içindeki CMake'i iOS için zorluyoruz
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DARCH=arm64 \
-            -DOS=iOS \
-            -DDOBBY_GENERATE_SHARED=OFF \
-            -DBUILD_SHARED_LIBS=OFF
-            
-          make -j$(sysctl -n hw.ncpu)
-          
-          # Çıkan libdobby.a dosyasını ana dizine kopyala
-          cp libdobby.a ../../
+          brew install cmake ninja
+          sudo xcode-select --switch /Applications/Xcode.app
 
-      - name: Compile Final Dylib
-        run: |
-          mkdir -p output
-          # Senin Tweak.m dosyanı Dobby ile birleştiriyoruz
-          clang -dynamiclib -arch arm64 \
-            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-            -miphoneos-version-min=11.0 \
-            -fobjc-arc \
-            -framework Foundation -framework UIKit \
-            -I./Dobby/include \
-            -L. -ldobby \
-            Tweak.m -o output/OnurcanBypass.dylib
+      # 3. Derleme klasörü oluştur (build için ayrılmış alan)
+      - name: Create Build Directory
+        run: mkdir -p build
+        working-directory: .
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Onurcan-Dobby-Dylib
-          path: output/OnurcanBypass.dylib
+      # 4. CMake yapılandırmasını çalıştır
+      - name: Configure CMake
+        run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 ..
+        working-directory: ./build
+
+      # 5. Ninja ile Derleme yapın
+      - name: Build with Ninja
+        run: ninja
+        working-directory: ./build
+
+      # 6. Derleme sonucu kontrolü (Opsiyonel: libdobby.a veya başka bir çıktı dosyasını kontrol edebilirsiniz)
+      - name: Check Build Output
+        run: ls ./build
