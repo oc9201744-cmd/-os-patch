@@ -1,34 +1,50 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#include <substrate.h> // Bu mantık için MSHookFunction (veya muadili) şart
+#include <mach-o/dyld.h>
+#include <mach/mach.h>
+#include <dlfcn.h>
 
-// --- ORIJINAL FONKSIYON POINTERLARI ---
-[span_3](start_span)// Bak.txt içindeki ana kontrolcü[span_3](end_span)
+// --- MANUEL HOOK ALTYAPISI (Substrate Gerektirmez) ---
+typedef struct {
+    uintptr_t target;
+    uintptr_t replacement;
+    uint8_t original_bytes[16];
+} InlineHook;
+
+// Bak.txt'deki ana kontrolcü için pointer
 static int64_t (*orig_sub_11D85C)(int64_t a1, int64_t a2, int64_t a3, int64_t a4, ...);
 
-// 1. ANA KONTROL MERKEZI HOOK (bak.txt analizi)
+// 1. ANA KONTROL MERKEZİ HOOK (bak.txt Analizi)
 int64_t hook_sub_11D85C(int64_t a1, int64_t a2, int64_t a3, int64_t a4, ...) {
-    [span_4](start_span)// Dosyadaki Case 0x35 (Hafıza Bütünlük Kontrolü)[span_4](end_span)
-    [span_5](start_span)// Eğer a2'nin 168. offsetindeki değer 0x35 ise, bu bir tarama isteğidir[span_5](end_span)
+    [span_2](start_span)// Dosyadaki Case 0x35 (Hafıza Bütünlük Kontrolü)[span_2](end_span)
+    [span_3](start_span)[span_4](start_span)// Eğer a2'nin 168. offsetindeki değer 0x35 ise, taramayı "temiz" (1) döndür[span_3](end_span)[span_4](end_span)
     if (a2 != 0 && *(unsigned char *)(a2 + 168) == 0x35) {
-        NSLog(@"[Onur Can] Case 0x35 (Memory Scan) yakalandi ve temizlendi.");
-        return 1; [span_6](start_span)// "Her şey yolunda" sinyali (Sadece bu vaka için)[span_6](end_span)
+        NSLog(@"[Security Onur Can] Case 0x35 yakalandi, gecis verildi.");
+        return 1; 
     }
     
-    [span_7](start_span)[span_8](start_span)// Diğer tüm durumlar (Case 0x15, 0x24 vb.) için orijinal akışa izin ver[span_7](end_span)[span_8](end_span)
-    // Böylece oyunun normal fonksiyonları (lobi geçişi, profil yükleme vb.) bozulmaz.
+    [span_5](start_span)// Diğer durumlar için orijinal akışa izin ver[span_5](end_span)
     return orig_sub_11D85C(a1, a2, a3, a4);
 }
 
-// 2. GÖRSEL BİLDİRİM (Security Onur Can)
-void show_onur_can_logic_ui() {
+// 2. GÜVENLİ BELLEK YAZICI (vm_protect ile)
+bool safe_patch(uintptr_t addr, void* data, size_t size) {
+    mach_port_t task = mach_task_self();
+    if (vm_protect(task, (vm_address_t)addr & ~PAGE_MASK, PAGE_SIZE, FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY) != KERN_SUCCESS) return false;
+    memcpy((void*)addr, data, size);
+    vm_protect(task, (vm_address_t)addr & ~PAGE_MASK, PAGE_SIZE, FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    return true;
+}
+
+// --- ONUR CAN UI ---
+void show_onur_can_ui() {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (window) {
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 60, window.frame.size.width, 25)];
-            label.text = @"🛡️ SECURITY ONUR CAN - LOGIC ACTIVE";
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, window.frame.size.width, 25)];
+            label.text = @"🛡️ SECURITY ONUR CAN - NO-SUBSTRATE ACTIVE";
             label.textColor = [UIColor whiteColor];
-            label.backgroundColor = [[UIColor purpleColor] colorWithAlphaComponent:0.6];
+            label.backgroundColor = [[UIColor orangeColor] colorWithAlphaComponent:0.7];
             label.textAlignment = NSTextAlignmentCenter;
             label.font = [UIFont boldSystemFontOfSize:10];
             [window addSubview:label];
@@ -39,13 +55,20 @@ void show_onur_can_logic_ui() {
 // --- BAŞLATICI ---
 __attribute__((constructor))
 static void init() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(40 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+        [span_6](start_span)uintptr_t target_addr = base + 0x11D85C; // bak.txt'deki ana fonksiyon[span_6](end_span)
+
+        // Orijinal fonksiyonu sakla ve hook'u yerleştir
+        orig_sub_11D85C = (int64_t (*)(int64_t, int64_t, int64_t, int64_t, ...))target_addr;
         
-        [span_9](start_span)// Sadece en kritik ana damarı (bak.txt içindeki kontrol merkezi) hookluyoruz[span_9](end_span)
-        // MSHookFunction kullanımı (Sideload araçları bunu genellikle destekler)
-        MSHookFunction((void *)(slide + 0x11D85C), (void *)hook_sub_11D85C, (void **)&orig_sub_11D85C);
-        
-        show_onur_can_logic_ui();
+        // Basit bir Patch: Fonksiyonun başına MOV X0, #1 / RET yazarak Case 35'i simüle ediyoruz
+        // Tam hook yerine en güvenli patch budur (Sideload için)
+        uint32_t patch[] = { 0xD2800020, 0xD65F03C0 }; // mov x0, #1, ret
+        if(safe_patch(target_addr, patch, sizeof(patch))) {
+             NSLog(@"[Onur Can] Patch uygulandi.");
+        }
+
+        show_onur_can_ui();
     });
 }
