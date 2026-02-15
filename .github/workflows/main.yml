@@ -1,4 +1,4 @@
-name: Build-Dobby-iOS-Bypass
+name: Build-Dobby-Bypass
 
 on:
   push:
@@ -12,12 +12,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build Dobby (Static Library)
+      - name: Build Dobby (Static Lib)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          # KRİTİK: Dobby'nin ortam kontrol hatasını bu parametreler çözer
+          # KRİTİK: Processor not configured hatasını bu parametreler çözer
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -39,10 +39,10 @@ jobs:
             -framework Foundation -framework UIKit \
             -I./Dobby/include \
             -L. -ldobby \
-            Tweak.m -o output/OnurcanDobby.dylib
+            Tweak.m -o output/OnurcanBypass.dylib
 
-      - name: Upload Artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: Onurcan-Dobby-Bypass
-          path: output/OnurcanDobby.dylib
+          name: Onurcan-Bypass-Dylib
+          path: output/OnurcanBypass.dylib
