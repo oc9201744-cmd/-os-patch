@@ -1,96 +1,69 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#import <dispatch/dispatch.h>
 #include <mach-o/dyld.h>
-#include <mach/mach.h>
 #include <stdint.h>
-#include <string.h>
 
-#pragma mark - CONFIG (SENİN VERDİKLERİN)
+// Dobby Header'ı aramamak için direkt tanımını yapıyoruz
+#ifdef __cplusplus
+extern "C" {
+#endif
+    int DobbyHook(void *function_address, void *replace_call, void **origin_call);
+#ifdef __cplusplus
+}
+#endif
 
-// Mach-O binary adı (değiştirmezsen çalışmaz)
-#define TARGET_IMAGE "ShadowTrackerExtra"
+// --- Orijinal Fonksiyon Saklayıcıları ---
+static void *orig_AnoSDKSetReportData = NULL;
+static void *orig_AnoSDKDelReportData = NULL;
 
-// IDA offsetleri (senin attıkların)
-#define OFFSET_SUB_F012C   0xF012C
-#define OFFSET_SUB_11D85C  0x11D85C
-
-#pragma mark - ARM64 INLINE RET PATCH
-
-static bool patch_ret(void *addr) {
-    if (!addr) return false;
-
-    // ARM64: RET
-    uint32_t ret_insn = 0xD65F03C0;
-
-    vm_address_t page = (vm_address_t)addr & ~(vm_page_size - 1);
-
-    if (vm_protect(mach_task_self(),
-                   page,
-                   vm_page_size,
-                   false,
-                   VM_PROT_READ | VM_PROT_WRITE | VM_PROT_EXECUTE) != KERN_SUCCESS)
-        return false;
-
-    memcpy(addr, &ret_insn, sizeof(ret_insn));
-
-    vm_protect(mach_task_self(),
-               page,
-               vm_page_size,
-               false,
-               VM_PROT_READ | VM_PROT_EXECUTE);
-
-    return true;
+// --- Hook Fonksiyonları (Bypass Mantığı) ---
+// Raporlama fonksiyonu çağrıldığında buraya düşecek ve hiçbir şey yapmadan dönecek
+void hook_AnoSDKSetReportData(void *arg1, void *arg2) {
+    NSLog(@"[Onurcan] Raporlama engellendi!");
+    return;
 }
 
-#pragma mark - ASLR BASE BULUCU
+void hook_AnoSDKDelReportData(void *arg1) {
+    return;
+}
 
-static uintptr_t get_game_base(void) {
+// --- ASLR Base Hesaplama ---
+uintptr_t get_game_base() {
+    uintptr_t slide = 0;
     uint32_t count = _dyld_image_count();
-
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
-        if (name && strstr(name, TARGET_IMAGE)) {
-            uintptr_t slide = _dyld_get_image_vmaddr_slide(i);
-            return 0x100000000 + slide;
+        if (name && strstr(name, "ShadowTrackerExtra")) {
+            slide = _dyld_get_image_vmaddr_slide(i);
+            break;
         }
     }
-    return 0;
+    return (0x100000000 + slide);
 }
 
-#pragma mark - CONSTRUCTOR
-
+// --- Ana Giriş ---
 __attribute__((constructor))
-static void onurcan_inline_initializer(void) {
-
-    // ⏱️ Senin koddaki gibi gecikme
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-
+static void entry() {
+    // 60 saniye bekle (Lobi banı yememek için en güvenli süre)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
         uintptr_t base = get_game_base();
-        if (!base) {
-            NSLog(@"[InlineHook] base bulunamadı");
-            return;
-        }
+        if (base <= 0x100000000) return;
 
-        void *addr1 = (void *)(base + OFFSET_SUB_F012C);
-        void *addr2 = (void *)(base + OFFSET_SUB_11D85C);
-
-        bool ok1 = patch_ret(addr1);
-        bool ok2 = patch_ret(addr2);
-
-        NSLog(@"[InlineHook] F012C=%d 11D85C=%d", ok1, ok2);
-
-        // UI uyarı (opsiyonel)
-        UIAlertController *alert =
-        [UIAlertController alertControllerWithTitle:@"Inline Hook Aktif"
-                                            message:@"Adresler başarıyla patchlendi"
-                                     preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
-                                                  style:UIAlertActionStyleDefault
-                                                handler:nil]];
-
-        UIWindow *window = UIApplication.sharedApplication.keyWindow;
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
+        // Dobby Hook Uygulamaları
+        // Ofsetleri Pubg.txt'deki güncel adreslerle güncelle (Örnek: 0x23874)
+        DobbyHook((void *)(base + 0x23874), (void *)hook_AnoSDKSetReportData, (void **)&orig_AnoSDKSetReportData);
+        DobbyHook((void *)(base + 0x23C74), (void *)hook_AnoSDKDelReportData, (void **)&orig_AnoSDKDelReportData);
+        
+        NSLog(@"[Onurcan] Dobby Bypass Aktif Edildi.");
+        
+        // Ekrana bildirim bas
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Dobby Bypass" 
+                                        message:@"Anogs Susturuldu!" 
+                                        preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Gazla!" style:UIAlertActionStyleDefault handler:nil]];
+            [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+        });
     });
 }
