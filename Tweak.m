@@ -4,99 +4,100 @@
 #include <dispatch/dispatch.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdarg.h>
 
-// --- Dobby Hook Tanımı ---
 #ifdef __cplusplus
 extern "C" {
 #endif
-    int DobbyHook(void *function_address, void *replace_call, void **origin_call);
+int DobbyHook(void *function_address, void *replace_call, void **origin_call);
 #ifdef __cplusplus
 }
 #endif
 
-// --- Tip Tanımlamaları ---
 typedef long long int64_t_ace;
 
-// --- Orijinal Fonksiyonları Saklayacağımız Değişkenler ---
+/* Orijinal fonksiyon pointer’ları */
 static int64_t_ace (*orig_sub_F012C)(void *a1);
 static int64_t_ace (*orig_sub_11D85C)(int64_t_ace a1, int64_t_ace a2, ...);
 
-#pragma mark - Hook Fonksiyonları (Bypass Mantığı)
+#pragma mark - Hook Fonksiyonları
 
-// 1. Raporlayıcıyı Sustur (Bypass 1)
+/* 1️⃣ Raporlayıcı */
 static int64_t_ace hook_sub_F012C(void *a1) {
-    // Rapor göndermeyi engellemek için 0 döndürüyoruz.
-    return 0; 
+    return 0;
 }
 
-// 2. Hafıza Taraması Engelleyici (Bypass 2)
+/* 2️⃣ Case 35 filtreli tarama */
 static int64_t_ace hook_sub_11D85C(int64_t_ace a1, int64_t_ace a2, ...) {
-    // 0x35 (Case 35) taraması yakalandığında "temiz" (1) döndür.
-    if (a2 != 0 && *(unsigned char *)(a2 + 168) == 0x35) {
-        return 1; 
+
+    if (a2 && *(uint8_t *)(a2 + 168) == 0x35) {
+        return 1; // temiz
     }
-    // Diğer durumlarda oyunu bozmamak için 0 dönüyoruz.
-    return 0; 
+
+    /* Varargs güvenli forward */
+    va_list args;
+    va_start(args, a2);
+    int64_t_ace result = orig_sub_11D85C(a1, a2, args);
+    va_end(args);
+
+    return result;
 }
 
-#pragma mark - ASLR / BASE Hesaplama
+#pragma mark - ASLR Base
 
 static uintptr_t get_game_base(void) {
-    uintptr_t slide = 0;
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
         if (name && strstr(name, "ShadowTrackerExtra")) {
-            slide = _dyld_get_image_vmaddr_slide(i);
-            break;
+            return (uintptr_t)_dyld_get_image_vmaddr_slide(i) + 0x100000000;
         }
     }
-    return (0x100000000 + slide);
+    return 0;
 }
 
-#pragma mark - Constructor (Başlatıcı)
+#pragma mark - Constructor
 
 __attribute__((constructor))
 static void onurcan_initializer(void) {
-    // ❗ KRİTİK: Güvenlik sisteminin yüklenmesi için 45 saniye bekleme.
-    // Lobi banlarını ve erken tespiti bu engeller.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45.0 * NSEC_PER_SEC)),
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        
+
         uintptr_t base = get_game_base();
-        NSLog(@"[onurcan] Base Adresi Hesaplandı: 0x%lx", base);
+        if (!base) {
+            NSLog(@"[onurcan] Base bulunamadı");
+            return;
+        }
 
-        if (base > 0x100000000) {
-            // --- Dobby İle Hook İşlemleri ---
-            DobbyHook((void *)(base + 0xF012C), (void *)hook_sub_F012C, (void **)&orig_sub_F012C);
-            DobbyHook((void *)(base + 0x11D85C), (void *)hook_sub_11D85C, (void **)&orig_sub_11D85C);
-            
-            NSLog(@"[onurcan] Dobby Bypass Aktif Edildi.");
+        NSLog(@"[onurcan] Base: 0x%lx", base);
 
-            // Kendi uygulaman için uyarı banner'ı
+        DobbyHook((void *)(base + 0xF012C),
+                  (void *)hook_sub_F012C,
+                  (void **)&orig_sub_F012C);
+
+        DobbyHook((void *)(base + 0x11D85C),
+                  (void *)hook_sub_11D85C,
+                  (void **)&orig_sub_11D85C);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
             UIAlertController *alert =
             [UIAlertController alertControllerWithTitle:@"Onurcan Bypass"
-                                                message:@"Bypass başarıyla yüklendi.\nMaça girebilirsin kanka."
+                                                message:@"Bypass başarıyla yüklendi."
                                          preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"Tamam"
                                                       style:UIAlertActionStyleDefault
                                                     handler:nil]];
-            
-            UIWindow *keyWindow = nil;
-            if (@available(iOS 13.0, *)) {
-                for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                    if (scene.activationState == UISceneActivationStateForegroundActive) {
-                        keyWindow = ((UIWindowScene*)scene).windows.firstObject;
-                        break;
-                    }
+
+            UIWindow *window = nil;
+            for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    window = scene.windows.firstObject;
+                    break;
                 }
-            } else {
-                keyWindow = [UIApplication sharedApplication].keyWindow;
             }
-            
-            [keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-        } else {
-            NSLog(@"[onurcan] Hata: Oyun base adresi bulunamadı!");
-        }
+
+            [window.rootViewController presentViewController:alert animated:YES completion:nil];
+        });
     });
 }
