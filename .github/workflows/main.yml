@@ -1,8 +1,8 @@
-name: Build Dobby (macOS)
+name: Build iOS dylib
 
 on:
   push:
-  pull_request:
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -10,32 +10,40 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Clone Dobby (stable)
-        run: |
-          rm -rf Dobby
-          git clone https://github.com/jmpews/Dobby.git
-          cd Dobby
-          git checkout 5dfc854
+    - name: Setup Xcode
+      run: |
+        sudo xcode-select -s /Applications/Xcode.app
 
-      - name: Configure Dobby
-        run: |
-          cd Dobby
-          mkdir -p build
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DDOBBY_DEBUG=OFF \
-            -DDOBBY_BUILD_EXAMPLE=OFF \
-            -DDOBBY_BUILD_TEST=OFF \
-            -DDOBBY_BUILD_KERNEL_MODE=OFF \
-            -DDOBBY_PLUGIN_SYMBOL_RESOLVER=OFF
+    - name: Create build dir
+      run: |
+        mkdir -p build
 
-      - name: Build Dobby
-        run: |
-          cmake --build Dobby/build --config Release
+    - name: Build dylib (arm64)
+      run: |
+        clang -dynamiclib \
+          -arch arm64 \
+          -fobjc-arc \
+          -framework Foundation \
+          -framework UIKit \
+          src/tweak.m \
+          -o build/libtweak.dylib
 
-      - name: List output
-        run: |
-          ls -la Dobby/build || true
+    - name: Verify architecture
+      run: |
+        lipo -info build/libtweak.dylib
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: dylib-output
+        path: build/libtweak.dylib
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: build/libtweak.dylib
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
