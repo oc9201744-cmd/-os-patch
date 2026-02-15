@@ -6,7 +6,7 @@
 #include <mach-o/dyld.h>
 #include <UIKit/UIKit.h>
 
-// --- Interpose Altyapısı ---
+// --- Interpose ---
 typedef struct interpose_substitution {
     const void* replacement;
     const void* original;
@@ -16,36 +16,7 @@ typedef struct interpose_substitution {
     __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
     __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
 
-// --- 1. GÖRSEL BİLDİRİM (UI) ---
-void draw_bypass_status() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject;
-                    break;
-                }
-            }
-        } else {
-            window = [UIApplication sharedApplication].keyWindow;
-        }
-
-        if (window) {
-            UILabel *statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(40, 60, 180, 25)];
-            statusLabel.text = @"[XO] BYPASS ACTIVE";
-            statusLabel.textColor = [UIColor whiteColor];
-            statusLabel.backgroundColor = [[UIColor greenColor] colorWithAlphaComponent:0.6];
-            statusLabel.textAlignment = NSTextAlignmentCenter;
-            statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
-            statusLabel.layer.cornerRadius = 10;
-            statusLabel.clipsToBounds = YES;
-            [window addSubview:statusLabel];
-        }
-    });
-}
-
-// --- 2. SİSTEM HOOKLARI ---
+// --- Sistem Hookları ---
 extern "C" int ptrace(int request, int pid, void* addr, int data);
 int my_ptrace(int request, int pid, void* addr, int data) { return 0; }
 INTERPOSE_FUNCTION(my_ptrace, ptrace);
@@ -56,38 +27,35 @@ int my_strcmp(const char *s1, const char *s2) {
 }
 INTERPOSE_FUNCTION(my_strcmp, strcmp);
 
-int my_mprotect(void *addr, size_t len, int prot) { return mprotect(addr, len, 7); }
-INTERPOSE_FUNCTION(my_mprotect, mprotect);
-
-// --- 3. GÜVENLİ YAMA FONKSİYONU ---
-void safe_patch(const char* module, uintptr_t offset) {
-    uintptr_t base = 0;
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        if (strstr(_dyld_get_image_name(i), module)) {
-            base = (uintptr_t)_dyld_get_image_header(i);
-            break;
+// --- Garantili Bildirim (Pop-up Alert) ---
+void show_alert() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+        if (!rootVC && @available(iOS 13.0, *)) {
+            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    rootVC = scene.windows.firstObject.rootViewController;
+                    break;
+                }
+            }
         }
-    }
-    if (base != 0) {
-        uintptr_t target = base + offset;
-        mprotect((void *)(target & ~0xFFF), 0x1000, 7);
-        *(uint32_t *)target = 0xD65F03C0; // ARM64 RET
-    }
+        
+        if (rootVC) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"[XO] BYPASS" 
+                                        message:@"Sistem Hookları Aktif! İyi Oyunlar." 
+                                        preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [rootVC presentViewController:alert animated:YES completion:nil];
+        }
+    });
 }
 
-// --- BAŞLATICI ---
+// --- Başlatıcı ---
 __attribute__((constructor))
 static void initialize() {
-    // 40 Saniye Gecikme: Oyunun tamamen lobide olduğundan emin oluruz
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(40 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        draw_bypass_status(); // Yeşil bildirimi bas
-        
-        // Frida scriptindeki offsetler
-        safe_patch("anogs", 0xF012C); 
-        safe_patch("anogs", 0x2DD28);
-        safe_patch("anogs", 0x80927);
-        
-        printf("[XO] 40 saniye beklendi ve yamalar yapildi! 🔥\n");
+    // 20 saniye sonra ekrana bir uyarı penceresi basar
+    // Eğer bu pencere gelirse dylib %100 çalışıyor demektir.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        show_alert();
     });
 }
