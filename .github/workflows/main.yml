@@ -1,7 +1,8 @@
-name: Build-Dobby-iOS-Stable
+name: Build Dobby (macOS)
 
 on:
   push:
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -9,50 +10,32 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
-        with:
-          clean: true
 
-      - name: Clone Dobby (PINNED WORKING COMMIT)
+      - name: Clone Dobby (stable)
         run: |
+          rm -rf Dobby
           git clone https://github.com/jmpews/Dobby.git
           cd Dobby
-          git checkout 5a3f7c8c8b6f0a2e3b9e4c9a3f9a1d0c7b2c6a41
+          git checkout 5dfc854
 
-      - name: Bypass environment check (safe)
-        run: |
-          rm -f Dobby/cmake/build_environment_check.cmake
-          echo 'message(STATUS "Dobby environment check bypassed")' > Dobby/cmake/build_environment_check.cmake
-
-      - name: Configure (iOS arm64)
+      - name: Configure Dobby
         run: |
           cd Dobby
-          mkdir build
-          cd build
-
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DBUILD_SHARED_LIBS=OFF \
+          mkdir -p build
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDOBBY_DEBUG=OFF \
             -DDOBBY_BUILD_EXAMPLE=OFF \
             -DDOBBY_BUILD_TEST=OFF \
-            -DDOBBY_DEBUG=OFF
+            -DDOBBY_BUILD_KERNEL_MODE=OFF \
+            -DDOBBY_PLUGIN_SYMBOL_RESOLVER=OFF
 
-      - name: Build
+      - name: Build Dobby
         run: |
-          cd Dobby/build
-          make -j$(sysctl -n hw.ncpu)
+          cmake --build Dobby/build --config Release
 
-      - name: Collect libdobby.a
+      - name: List output
         run: |
-          mkdir -p output
-          find Dobby/build -name "libdobby*.a"
-          cp Dobby/build/libdobby*.a output/
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: libdobby-ios-arm64
-          path: output/
+          ls -la Dobby/build || true
