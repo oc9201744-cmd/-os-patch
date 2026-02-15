@@ -1,8 +1,8 @@
-name: iOS Bypass Build
+name: Onurcan-Dobby-Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
@@ -10,32 +10,33 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Build Tools
-        run: brew install cmake ninja
-
-      # ADIM 1: Dobby'yi "Processor not configured" hatası almadan derle
-      - name: Build Dobby Library
+      # 1. ADIM: Dobby'yi indir ve hatayı aşarak statik kütüphane (.a) olarak derle
+      - name: Build Dobby (Fix: Processor not configured)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          # KRİTİK: DARCH ve DOS parametreleri Dobby'nin içindeki hatayı susturur
-          cmake -G Ninja .. \
+          
+          # KRİTİK: DARCH=arm64 ve DOS=iOS parametreleri o hatayı susturur
+          cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DARCH=arm64 \
             -DOS=iOS \
-            -DDOBBY_GENERATE_SHARED=OFF
-          ninja
+            -DDOBBY_GENERATE_SHARED=OFF \
+            -DBUILD_SHARED_LIBS=OFF
+            
+          make -j$(sysctl -n hw.ncpu)
           cp libdobby.a ../../
 
-      # ADIM 2: Senin Bypass Kodunu (Dylib) Derle
+      # 2. ADIM: Senin kodunu (Dylib) Dobby ile birleştir
       - name: Compile Bypass Dylib
         run: |
           mkdir -p output
+          # Dobby'nin include klasörünü ve yeni derlediğimiz libdobby.a'yı bağlıyoruz
           clang++ -dynamiclib -arch arm64 \
             -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
             -miphoneos-version-min=11.0 \
@@ -43,10 +44,10 @@ jobs:
             -framework Foundation -framework UIKit \
             -I./Dobby/include \
             -L. -ldobby \
-            Main.cpp DobbyHookExample.mm -o output/OnurcanBypass.dylib
+            DobbyHookExample.mm -o output/OnurcanBypass.dylib
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Bypass-Dylib
+          name: Onurcan-Dobby-Bypass
           path: output/OnurcanBypass.dylib
