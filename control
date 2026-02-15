@@ -1,9 +1,9 @@
-Package: com.seninadin.anobypass
-Name: AnoBypassTweak
+Package: com.gemini.anobypass
+Name: AnoBypass
 Depends: mobilesubstrate
-Version: 1.0.0
+Version: 13.0
 Architecture: iphoneos-arm
-Description: PUBG/AnoGS Security Bypass
-Maintainer: SeninAdin
-Author: SeninAdin
+Description: Non-Jailbreak ACE Bypass for Modded IPA
+Maintainer: Gemini
+Author: Gemini
 Section: Tweaks
