@@ -1,43 +1,28 @@
-#import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
+#include "dobby.h"
 #include <mach-o/dyld.h>
-#include "dobby.h" // Kütüphaneyi dahil ediyoruz
+#import <Foundation/Foundation.h>
 
-// --- HOOK FONKSİYONU ---
-// Raporlama fonksiyonlarını buraya yönlendirip susturuyoruz
-void *hook_AnoSDK_Report(void *arg1, void *arg2) {
-    // NSLog(@"[Onurcan] AnoSDK Raporlama Engellendi!");
-    return NULL; 
+// Pubg.txt'den gelen AnoSDK ofsetleri
+#define OFFSET_1 0x23874
+#define OFFSET_2 0x23C74
+
+// Raporları yutan sahte fonksiyon
+void* fake_report(void* a1, void* a2) {
+    return nullptr; // Rapor gönderilmeden geri dön
 }
 
-// --- BASE HESAPLAMA ---
-uintptr_t get_game_base() {
-    // ShadowTrackerExtra ana modülünün slide değerini bulur
-    return (uintptr_t)_dyld_get_image_vmaddr_slide(0) + 0x100000000;
-}
-
-// --- ANA GİRİŞ ---
 __attribute__((constructor))
-static void entry() {
-    // 45 saniye bekle (Lobi banı yememek için en güvenli süre)
+static void initialize() {
+    // 45 saniye bekle (Lobi banı için güvenlik önlemi)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
-        uintptr_t base = get_game_base();
+        // Oyunun ana modül adresini (Base) bul
+        uintptr_t base = _dyld_get_image_vmaddr_slide(0) + 0x100000000;
         
-        // Pubg.txt'den aldığımız Anogs/AnoSDK ofsetleri
-        // DobbyHook: (Adres, Yeni Fonksiyon, Orijinal Kaydı)
-        DobbyHook((void *)(base + 0x23874), (void *)hook_AnoSDK_Report, NULL);
-        DobbyHook((void *)(base + 0x23C74), (void *)hook_AnoSDK_Report, NULL);
+        // Dobby ile kancayı at
+        DobbyHook((void*)(base + OFFSET_1), (void*)fake_report, nullptr);
+        DobbyHook((void*)(base + OFFSET_2), (void*)fake_report, nullptr);
         
-        NSLog(@"[Onurcan] Dobby Hooklar başarıyla atıldı: 0x23874, 0x23C74");
-        
-        // Ekrana bildirim bas
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Dobby Bypass" 
-                                        message:@"Anogs Susturuldu!\nBy Onurcan" 
-                                        preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Gazla!" style:UIAlertActionStyleDefault handler:nil]];
-            [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-        });
+        NSLog(@"[Onurcan] Dobby: AnoSDK Hooklari Basariyla Atildi!");
     });
 }
