@@ -2,9 +2,8 @@
 #import <Foundation/Foundation.h>
 #include <dlfcn.h>
 #include <unistd.h>
-#include <sys/sysctl.h>
 
-// --- INTERPOSE ALTYAPISI (Ban Yapısı Burası, Dokunulmadı) ---
+// --- INTERPOSE ALTYAPISI (Bypass Burası) ---
 typedef struct interpose_substitution {
     const void* replacement;
     const void* original;
@@ -14,6 +13,7 @@ typedef struct interpose_substitution {
     __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
     __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
 
+// 1. BAN ANALİZİ VE RAPOR FİLTRESİ
 int h_strcmp(const char *s1, const char *s2) {
     if (s1 && s2) {
         if (strstr(s2, "3ae") || strstr(s2, "35") || strstr(s2, "report") || strstr(s2, "SecurityCheck")) {
@@ -24,55 +24,56 @@ int h_strcmp(const char *s1, const char *s2) {
 }
 INTERPOSE_FUNCTION(h_strcmp, strcmp);
 
+// 2. ANTİ-DEBUGGER SUSTURUCU
 extern "C" int ptrace(int request, int pid, void* addr, int data);
-int h_ptrace(int request, int pid, void* addr, int data) { return 0; }
+int h_ptrace(int request, int pid, void* addr, int data) {
+    return 0; 
+}
 INTERPOSE_FUNCTION(h_ptrace, ptrace);
 
-// --- YAZIYI ZORLA ÇIKARTAN UI MOTORU ---
-void force_draw_text() {
+// --- ÇALIŞAN KODDAN ALINAN YAZI MOTORU ---
+void force_show_onur_can_text() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = nil;
-        // iOS 13+ En aktif pencereyi bulma
+        UIWindow *activeWindow = nil;
         if (@available(iOS 13.0, *)) {
             for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
                 if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    win = scene.windows.firstObject;
-                    break;
+                    for (UIWindow *w in scene.windows) {
+                        if (w.isKeyWindow) { activeWindow = w; break; }
+                    }
                 }
             }
         }
-        if (!win) win = [UIApplication sharedApplication].keyWindow;
+        if (!activeWindow) activeWindow = [UIApplication sharedApplication].keyWindow;
 
-        // Eğer pencere bulunduysa yazıyı bas
-        if (win) {
-            // Eğer yazı zaten ekrandaysa tekrar ekleme (Çakışma olmasın)
-            if ([win viewWithTag:1907]) return;
+        if (activeWindow) {
+            // Eğer yazı zaten varsa ekleme
+            if ([activeWindow viewWithTag:1907]) return;
 
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 30)];
-            label.text = @"🛡️ ONUR CAN SECURE ACTIVE ✅";
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, activeWindow.frame.size.width, 30)];
+            label.text = @"🛡️ ONUR CAN BYPASS ACTIVE ✅";
             label.textColor = [UIColor cyanColor];
-            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
             label.textAlignment = NSTextAlignmentCenter;
-            label.font = [UIFont boldSystemFontOfSize:12];
-            label.tag = 1907; // Benzersiz ID
-            label.layer.zPosition = 99999; // En üst katmana zorla
-            [win addSubview:label];
-            NSLog(@"[Onur Can] Yazı ekrana çakıldı!");
-        } 
-        
-        // Oyun lobiye girerken pencereleri sıfırlayabilir. 
-        // Bu yüzden her 3 saniyede bir kontrol et, yazı yoksa tekrar bas.
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            force_draw_text();
-        });
+            label.font = [UIFont boldSystemFontOfSize:13];
+            label.tag = 1907;
+            label.layer.zPosition = 9999;
+            [activeWindow addSubview:label];
+        } else {
+            // Pencere bulunana kadar 2 saniyede bir dene
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                force_show_onur_can_text();
+            });
+        }
     });
 }
 
-// BAŞLATICI
+// --- BAŞLATICI ---
 __attribute__((constructor))
-static void init() {
-    // 15. saniyede motoru başlat
+static void initialize() {
+    // 15 saniye sonra yazıyı bas (Oyunun tam açılmasını bekle)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        force_draw_text();
+        force_show_onur_can_text();
     });
+    printf("[XO] Deep Stealth Active.\n");
 }
