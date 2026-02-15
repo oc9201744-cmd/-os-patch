@@ -75,11 +75,9 @@ void force_show_onur_can_text() {
     });
 }
 
-// BAŞLATICI
+// --- BAŞLATICI ---
 __attribute__((constructor))
-static void init() {
-    // 20 saniye bekle (ShadowTrackerExtra'nın UI'ı oluşturması için)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        force_show_onur_can_text();
-    });
+static void initialize() {
+    // Hafıza yaması kesinlikle YOK. Sadece sistem fonksiyonları kandırılıyor.
+    printf("[XO] Deep Stealth Active.\n");
 }
