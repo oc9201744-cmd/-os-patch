@@ -1,28 +1,43 @@
-name: ARM64 Bypass Derleyici
+name: Onurcan-iPhone15-Bypass
 
 on:
   push:
     branches: [ "main" ]
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-
     steps:
-      - name: Repo Kontrol
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: ARM64 Dylib Derle
+      - name: Setup iOS SDK
         run: |
-          xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
-          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-          -miphoneos-version-min=14.0 \
-          -install_name @executable_path/Frameworks/MyBypass.dylib \
-          Main.cpp -o MyBypass.dylib
+          # En güncel SDK yolunu bulur
+          echo "SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
 
-      - name: Dosyayı Kaydet
+      - name: Compile Ultimate Bypass
+        run: |
+          mkdir -p output
+          # iPhone 15 Pro Max (arm64) için derleme
+          # -miphoneos-version-min=15.0 (iOS 17 desteği için ideal alt sınır)
+          clang++ -dynamiclib -arch arm64 \
+            -isysroot ${{ env.SDK_PATH }} \
+            -miphoneos-version-min=15.0 \
+            -fobjc-arc \
+            -O3 \
+            -framework Foundation -framework UIKit \
+            -I. \
+            Tweak.mm -o output/GeminiV13_NonJB.dylib
+
+      - name: Sign Dylib (Fake Sign for Sideloading)
+        run: |
+          # Jailbreaksiz cihazlarda dylib'in yüklenmesi için sahte imza gerekir
+          ldid -S output/GeminiV13_NonJB.dylib
+
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: MyBypass_ARM64
-          path: MyBypass.dylib
+          name: iPhone15-ProMax-Bypass
+          path: output/GeminiV13_NonJB.dylib
