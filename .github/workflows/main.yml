@@ -1,4 +1,4 @@
-name: PUBG Bypass Build
+name: ARM64 Bypass Derleyici
 
 on:
   push:
@@ -10,10 +10,10 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Repo Kontrol
         uses: actions/checkout@v4
 
-      - name: Compile Dylib
+      - name: ARM64 Dylib Derle
         run: |
           xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
@@ -21,8 +21,8 @@ jobs:
           -install_name @executable_path/Frameworks/MyBypass.dylib \
           Main.cpp -o MyBypass.dylib
 
-      - name: Upload Artifact
+      - name: Dosyayı Kaydet
         uses: actions/upload-artifact@v4
         with:
-          name: MyBypass_Dylib
+          name: MyBypass_ARM64
           path: MyBypass.dylib
