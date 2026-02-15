@@ -1,9 +1,0 @@
-Package: com.gemini.anobypass
-Name: AnoBypass
-Depends: mobilesubstrate
-Version: 13.0
-Architecture: iphoneos-arm
-Description: Non-Jailbreak ACE Bypass for Modded IPA
-Maintainer: Gemini
-Author: Gemini
-Section: Tweaks
