@@ -11,12 +11,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Theos
-        uses: theos/setup-theos@v1
-        with:
-          version: master
+      - name: Install Dependencies
+        run: |
+          brew update
+          brew install ldid dpkg cmake
 
-      - name: Build Dobby (Fix Environment Check)
+      - name: Setup Theos
+        run: |
+          git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
+          echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
+
+      - name: Build Dobby (iOS arm64)
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
@@ -26,8 +31,6 @@ jobs:
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DARCH=arm64 \
-            -DOS=iOS \
             -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF
 
@@ -38,8 +41,6 @@ jobs:
         run: |
           export THEOS=$GITHUB_WORKSPACE/theos
           make package FINALPACKAGE=1
-        env:
-          THEOS: ${{ github.workspace }}/theos
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
