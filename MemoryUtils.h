@@ -1,46 +1,100 @@
-#ifndef MEMORY_UTILS_H
-#define MEMORY_UTILS_H
-
-#include <mach-o/dyld.h>
-#include <mach/mach.h>
-#include <sys/mman.h>
+#include <stdio.h>
 #include <string.h>
+#include <dlfcn.h>
+#include <stdint.h>
+#include <sys/mman.h>
+#include <mach-o/dyld.h>
+#include <UIKit/UIKit.h>
 
-// iOS SDK'da PROT_COPY bazen eksik olabilir, manuel tanımlıyoruz
-#ifndef PROT_COPY
-#define PROT_COPY 0x10
-#endif
+// --- Interpose Altyapısı ---
+typedef struct interpose_substitution {
+    const void* replacement;
+    const void* original;
+} interpose_substitution_t;
 
-// Canlı Base Adresini (ASLR dahil) otomatik bulur
-static uintptr_t get_live_base() {
-    return (uintptr_t)_dyld_get_image_header(0);
+#define INTERPOSE_FUNCTION(replacement, original) \
+    __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
+    __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
+
+// --- 1. GÖRSEL BİLDİRİM (UI) ---
+void draw_bypass_status() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    window = scene.windows.firstObject;
+                    break;
+                }
+            }
+        } else {
+            window = [UIApplication sharedApplication].keyWindow;
+        }
+
+        if (window) {
+            UILabel *statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(40, 60, 180, 25)];
+            statusLabel.text = @"[XO] BYPASS ACTIVE";
+            statusLabel.textColor = [UIColor whiteColor];
+            statusLabel.backgroundColor = [[UIColor greenColor] colorWithAlphaComponent:0.6];
+            statusLabel.textAlignment = NSTextAlignmentCenter;
+            statusLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+            statusLabel.layer.cornerRadius = 10;
+            statusLabel.clipsToBounds = YES;
+            
+            [window addSubview:statusLabel];
+            
+            // 10 saniye sonra yazıyı yavaşça kaybet (isteğe bağlı)
+            [UIView animateWithDuration:2.0 delay:10.0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+                statusLabel.alpha = 0;
+            } completion:^(BOOL finished) {
+                [statusLabel removeFromSuperview];
+            }];
+        }
+    });
 }
 
-// Güvenli Yazma (iPhone 15 Pro Max & iOS 17/18 Uyumlu)
-static bool auto_patch(uintptr_t offset, const void *data, size_t size) {
-    uintptr_t address = get_live_base() + offset;
-    
-    // Sayfa Hizalaması
-    size_t pageSize = PAGE_SIZE; 
-    uintptr_t pageStart = address & ~(pageSize - 1);
-    
-    // Yazma İzni Al: PROT_COPY | PROT_READ | PROT_WRITE
-    if (mprotect((void *)pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_COPY) != 0) {
-        // Eğer PROT_COPY başarısız olursa standart RWX dene
-        mprotect((void *)pageStart, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC);
+// --- 2. SİSTEM HOOKLARI ---
+extern "C" int ptrace(int request, int pid, void* addr, int data);
+int my_ptrace(int request, int pid, void* addr, int data) { return 0; }
+INTERPOSE_FUNCTION(my_ptrace, ptrace);
+
+int my_strcmp(const char *s1, const char *s2) {
+    if (s2 != NULL && strstr(s2, "anti_sp2s")) return 0;
+    return strcmp(s1, s2);
+}
+INTERPOSE_FUNCTION(my_strcmp, strcmp);
+
+int my_mprotect(void *addr, size_t len, int prot) { return mprotect(addr, len, 7); }
+INTERPOSE_FUNCTION(my_mprotect, mprotect);
+
+// --- 3. HAFIZA YAMALARI (OFFSET) ---
+void patch_memory(const char* module, uintptr_t offset) {
+    uintptr_t base = 0;
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        if (strstr(_dyld_get_image_name(i), module)) {
+            base = (uintptr_t)_dyld_get_image_header(i);
+            break;
+        }
     }
-    
-    // Yamayı uygula
-    memcpy((void *)address, data, size);
-    
-    // Korumayı geri yükle (Sadece Okuma ve Çalıştırma)
-    mprotect((void *)pageStart, pageSize, PROT_READ | PROT_EXEC);
-    return true;
+    if (base != 0) {
+        uintptr_t target = base + offset;
+        mprotect((void *)(target & ~0xFFF), 0x1000, 7);
+        *(uint32_t *)target = 0xD65F03C0; // ARM64 RET
+    }
 }
 
-// ARM64 Komutları
-const unsigned char arm64_ret[] = {0xC0, 0x03, 0x5F, 0xD6};
-const unsigned char arm64_mov_w0_0_ret[] = {0x00, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6};
-const unsigned char arm64_mov_w0_1_ret[] = {0x20, 0x00, 0x80, 0x52, 0xC0, 0x03, 0x5F, 0xD6};
-
-#endif
+// --- BAŞLATICI ---
+__attribute__((constructor))
+static void initialize() {
+    // Oyun açıldıktan 6 saniye sonra hem yazıyı koy hem yamaları yap
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(6 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        draw_bypass_status(); // Ekrana yazıyı bas
+        
+        patch_memory("anogs", 0xF012C); 
+        patch_memory("anogs", 0x2DD28);
+        patch_memory("anogs", 0x80927);
+        
+        printf("[XO] Her şey hazır kanka! 🔥\n");
+    });
+}
