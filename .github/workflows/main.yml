@@ -1,4 +1,4 @@
-name: Onurcan-Inline-Bypass
+name: Build-Dobby-iOS
 
 on:
   push:
@@ -12,18 +12,35 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Compile iOS Dylib
+      - name: Build Dobby for iOS (ARM64)
         run: |
-          mkdir -p build
+          git clone https://github.com/jmpews/Dobby.git --depth 1
+          cd Dobby
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DDOBBY_GENERATE_SHARED=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DARCH=arm64
+          make -j$(sysctl -n hw.ncpu)
+          cp libdobby.a ../../
+
+      - name: Compile Bypass
+        run: |
+          mkdir -p output
           clang -dynamiclib -arch arm64 \
             -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
             -miphoneos-version-min=11.0 \
             -fobjc-arc \
             -framework Foundation -framework UIKit \
-            Tweak.m patch.c -o build/OnurcanBypass.dylib
+            -I./Dobby/include \
+            -L. -ldobby \
+            Tweak.m -o output/OnurcanBypass.dylib
 
-      - name: Upload Artifact
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: OnurcanBypass-Dylib
-          path: build/OnurcanBypass.dylib
+          name: Onurcan-Dobby-Dylib
+          path: output/OnurcanBypass.dylib
