@@ -10,20 +10,34 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Compile
+      - name: Check Files (Hata Ayıklama)
+        run: ls -R  # Klasördeki dosyaları loglara basar, ne var ne yok görürüz.
+
+      - name: Compile Dylib
         run: |
+          # Dosya adını otomatik bulalım (Main.cpp veya Main.mm)
+          SOURCE_FILE=$(ls Main.* 2>/dev/null | head -n 1)
+          
+          if [ -z "$SOURCE_FILE" ]; then
+            echo "HATA: Kaynak dosyası bulunamadı! Lütfen dosya adını kontrol et."
+            exit 1
+          fi
+
+          echo "Derlenen dosya: $SOURCE_FILE"
+
           xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
+          -x objective-c++ \
           -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
           -miphoneos-version-min=14.0 \
           -install_name @executable_path/Frameworks/MyBypass.dylib \
           -framework Foundation -framework UIKit \
-          Main.cpp -o MyBypass.dylib
+          "$SOURCE_FILE" -o MyBypass.dylib
 
-      - name: Upload
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyBypass_With_UI
+          name: MyBypass_Final
           path: MyBypass.dylib
