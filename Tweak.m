@@ -3,7 +3,7 @@
 #include <mach-o/dyld.h>
 #include <stdint.h>
 
-// Dobby Header'ı aramamak için direkt tanımını yapıyoruz
+// --- DOBBY HEADER TANIMI ---
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,58 +12,45 @@ extern "C" {
 }
 #endif
 
-// --- Orijinal Fonksiyon Saklayıcıları ---
-static void *orig_AnoSDKSetReportData = NULL;
-static void *orig_AnoSDKDelReportData = NULL;
+// --- CONFIG ---
+#define TARGET_IMAGE "ShadowTrackerExtra"
 
-// --- Hook Fonksiyonları (Bypass Mantığı) ---
-// Raporlama fonksiyonu çağrıldığında buraya düşecek ve hiçbir şey yapmadan dönecek
-void hook_AnoSDKSetReportData(void *arg1, void *arg2) {
-    NSLog(@"[Onurcan] Raporlama engellendi!");
-    return;
+// --- HOOK MANTIĞI ---
+void *hook_AnoSDK_Report(void *arg1, void *arg2) {
+    // Veri gönderimini keser ve boş döner
+    return NULL; 
 }
 
-void hook_AnoSDKDelReportData(void *arg1) {
-    return;
-}
-
-// --- ASLR Base Hesaplama ---
+// --- BASE BULUCU ---
 uintptr_t get_game_base() {
-    uintptr_t slide = 0;
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
-        if (name && strstr(name, "ShadowTrackerExtra")) {
-            slide = _dyld_get_image_vmaddr_slide(i);
-            break;
+        if (name && strstr(name, TARGET_IMAGE)) {
+            return (uintptr_t)_dyld_get_image_vmaddr_slide(i) + 0x100000000;
         }
     }
-    return (0x100000000 + slide);
+    return 0;
 }
 
-// --- Ana Giriş ---
+// --- ANA GİRİŞ ---
 __attribute__((constructor))
 static void entry() {
-    // 60 saniye bekle (Lobi banı yememek için en güvenli süre)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // Oyunun tam yüklenmesi için 45 saniye bekle
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(45 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t base = get_game_base();
-        if (base <= 0x100000000) return;
-
-        // Dobby Hook Uygulamaları
-        // Ofsetleri Pubg.txt'deki güncel adreslerle güncelle (Örnek: 0x23874)
-        DobbyHook((void *)(base + 0x23874), (void *)hook_AnoSDKSetReportData, (void **)&orig_AnoSDKSetReportData);
-        DobbyHook((void *)(base + 0x23C74), (void *)hook_AnoSDKDelReportData, (void **)&orig_AnoSDKDelReportData);
-        
-        NSLog(@"[Onurcan] Dobby Bypass Aktif Edildi.");
-        
-        // Ekrana bildirim bas
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Dobby Bypass" 
-                                        message:@"Anogs Susturuldu!" 
-                                        preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Gazla!" style:UIAlertActionStyleDefault handler:nil]];
-            [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
-        });
+        if (base > 0x100000000) {
+            
+            // Pubg.txt'den gelen ofsetler
+            // DelReportData ve SetReportData fonksiyonlarını susturuyoruz
+            void *orig1;
+            DobbyHook((void *)(base + 0x23874), (void *)hook_AnoSDK_Report, (void **)&orig1);
+            
+            void *orig2;
+            DobbyHook((void *)(base + 0x23C74), (void *)hook_AnoSDK_Report, (void **)&orig2);
+            
+            NSLog(@"[DobbyBypass] Ofsetler Hooklandı: 0x23874, 0x23C74");
+        }
     });
 }
