@@ -1,55 +1,8 @@
-name: Onurcan-Dobby-Build
-
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # 1. ADIM: Dobby'yi "Processor" hatasını atlayarak derle
-      - name: Build Dobby Library
-        run: |
-          git clone https://github.com/jmpews/Dobby.git --depth 1
-          cd Dobby
-          mkdir build && cd build
-          
-          # KRİTİK: DARCH, DOS ve PLATFORM parametreleri hatayı susturur
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DARCH=arm64 \
-            -DOS=iOS \
-            -DPLATFORM=OS64 \
-            -DDOBBY_GENERATE_SHARED=OFF \
-            -DBUILD_SHARED_LIBS=OFF
-            
-          make -j$(sysctl -n hw.ncpu)
-          cp libdobby.a ../../
-
-      # 2. ADIM: Bypass .dylib dosyasını derle
-      - name: Compile Bypass Dylib
-        run: |
-          mkdir -p output
-          # Not: DobbyHookExample.mm dosyasının ana dizinde olduğundan emin ol
-          clang++ -dynamiclib -arch arm64 \
-            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-            -miphoneos-version-min=11.0 \
-            -fobjc-arc \
-            -framework Foundation -framework UIKit \
-            -I./Dobby/include \
-            -L. -ldobby \
-            DobbyHookExample.mm -o output/OnurcanBypass.dylib
-
-      # 3. ADIM: Sonucu Yükle
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Onurcan-Dobby-Bypass
-          path: output/OnurcanBypass.dylib
+- name: Compile Bypass Dylib
+  run: |
+    # SDK yolunu bul ve clang ile arm64 dylib oluştur
+    xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
+    -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+    -install_name @executable_path/Frameworks/MyBypass.dylib \
+    -L./libs -lsubstrate \
+    main.mm -o MyBypass.dylib
