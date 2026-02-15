@@ -1,76 +1,9 @@
-name: Onurcan-Bypass-Build
-
-on:
-  push:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: macos-latest
-
-    steps:
-    # --------------------------------------------------
-    # 1️⃣ Repo Checkout
-    # --------------------------------------------------
-    - name: Checkout Repo
-      uses: actions/checkout@v4
-
-    # --------------------------------------------------
-    # 2️⃣ Xcode Seç (Stabil)
-    # --------------------------------------------------
-    - name: Select Xcode
-      run: sudo xcode-select -s /Applications/Xcode.app
-
-    # --------------------------------------------------
-    # 3️⃣ Dobby iOS arm64 Build (STATIC)
-    # --------------------------------------------------
-    - name: Build Dobby for iOS (arm64)
-      run: |
-        git clone https://github.com/jmpews/Dobby.git
-        cd Dobby
-        mkdir build && cd build
-
-        cmake .. \
-          -DCMAKE_SYSTEM_NAME=iOS \
-          -DCMAKE_OSX_SYSROOT=iphoneos \
-          -DCMAKE_OSX_ARCHITECTURES=arm64 \
-          -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-          -DBUILD_SHARED_LIBS=OFF \
-          -DDOBBY_GENERATE_SHARED=OFF \
-          -DDOBBY_BUILD_EXAMPLE=OFF \
-          -DDOBBY_BUILD_TEST=OFF
-
-        make -j$(sysctl -n hw.ncpu)
-
-        cd ../..
-        cp Dobby/build/libdobby.a .
-
-        echo "==== LIPO CHECK ===="
-        lipo -info libdobby.a
-
-    # --------------------------------------------------
-    # 4️⃣ Bypass Dylib Build
-    # --------------------------------------------------
-    - name: Build Bypass Dylib
-      run: |
-        mkdir -p output
-
-        clang -dynamiclib \
-          -arch arm64 \
-          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-          -miphoneos-version-min=11.0 \
-          -fobjc-arc \
-          -framework Foundation \
-          -framework UIKit \
-          Tweak.m \
-          libdobby.a \
-          -o output/OnurcanBypass.dylib
-
-    # --------------------------------------------------
-    # 5️⃣ Artifact Upload
-    # --------------------------------------------------
-    - name: Upload Dylib
-      uses: actions/upload-artifact@v4
-      with:
-        name: Onurcan-Bypass-Dylib
-        path: output/OnurcanBypass.dylib
+      - name: Compile
+        run: |
+          mkdir -p build
+          clang -dynamiclib -arch arm64 \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=11.0 \
+            -fobjc-arc \
+            -framework Foundation -framework UIKit \
+            Tweak.m patch.c -o build/OnurcanBypass.dylib
