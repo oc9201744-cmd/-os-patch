@@ -1,49 +1,42 @@
-name: Build-Bypass-Final
+Run git clone https://github.com/jmpews/Dobby.git --depth 1
+Cloning into 'Dobby'...
+CMake Deprecation Warning at CMakeLists.txt:1 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
 
-on:
-  push:
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
 
-jobs:
-  build:
-    runs-on: macos-latest
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+-- The C compiler identification is AppleClang 17.0.0.17000013
+-- The CXX compiler identification is AppleClang 17.0.0.17000013
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The ASM compiler identification is AppleClang
+-- Found assembler: /usr/bin/cc
+-- 
+CMake Error at cmake/build_environment_check.cmake:33 (string):
+-- ********* build environment check ***********
+-- 	Compiler: 	 AppleClang
+  string no output variable specified
+-- Configuring incomplete, errors occurred!
+Call Stack (most recent call first):
+  CMakeLists.txt:7 (include)
 
-      - name: Install Dependencies
-        run: |
-          brew update
-          brew install ldid dpkg cmake
 
-      - name: Setup Theos
-        run: |
-          git clone --recursive https://github.com/theos/theos.git $GITHUB_WORKSPACE/theos
-          echo "THEOS=$GITHUB_WORKSPACE/theos" >> $GITHUB_ENV
+CMake Error at cmake/build_environment_check.cmake:53 (message):
+  Processor not configured
+Call Stack (most recent call first):
+  CMakeLists.txt:7 (include)
 
-      - name: Build Dobby (iOS arm64)
-        run: |
-          git clone https://github.com/jmpews/Dobby.git --depth 1
-          cd Dobby
-          mkdir build && cd build
 
-          cmake .. \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DDOBBY_GENERATE_SHARED=OFF \
-            -DBUILD_SHARED_LIBS=OFF
-
-          make -j$(sysctl -n hw.ncpu)
-          cp libdobby.a $GITHUB_WORKSPACE/
-
-      - name: Compile Tweak
-        run: |
-          export THEOS=$GITHUB_WORKSPACE/theos
-          make package FINALPACKAGE=1
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Gemini-Bypass-NonJB
-          path: packages/*.deb
+Error: Process completed with exit code 1.
