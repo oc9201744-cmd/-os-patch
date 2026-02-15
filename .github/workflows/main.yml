@@ -29,43 +29,45 @@ jobs:
         run: |
           cat <<EOF > CMakeLists.txt
           cmake_minimum_required(VERSION 3.15)
-
           project(DobbyHookExample LANGUAGES C CXX ASM)
-
           set(CMAKE_SYSTEM_NAME iOS)
           set(CMAKE_OSX_SYSROOT /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk)
           set(CMAKE_OSX_ARCHITECTURES arm64)
           set(CMAKE_OSX_DEPLOYMENT_TARGET 9.0)
-
           set(CMAKE_CXX_STANDARD 17)
           set(CMAKE_CXX_STANDARD_REQUIRED ON)
           set(CMAKE_CXX_EXTENSIONS OFF)
-
           find_library(UIKIT_LIBRARY UIKit)
           find_library(FOUNDATION_LIBRARY Foundation)
-
           set(SOURCES
               main.cpp
               DobbyHookExample.mm
           )
-
-          add_library(dobby_hook STATIC \${SOURCES})
+          add_library(dobby_hook SHARED \${SOURCES})
           target_link_libraries(dobby_hook
               \${UIKIT_LIBRARY}
               \${FOUNDATION_LIBRARY}
-              c++ # Modern C++ Standard Library
+              c++
           )
-
           set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
           set(CMAKE_LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib)
           set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/bin)
-
+          message("CMake yapılandırması tamamlandı!")
           EOF
 
-      # CMake ile Yapılandırma
+      # Yapılandırma Adımı
       - name: Configure CMake
         run: cmake -G Ninja -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=9.0 -S . -B build
 
-      # Derleme
+      # Derleme Adımı
       - name: Build with Ninja
         run: ninja -C build
+
+      # Çıktıları Doğrulama
+      - name: Verify `.dylib` Output
+        run: |
+          if [ ! -f build/lib/libdobby_hook.dylib ]; then
+            echo "Hata: libdobby_hook.dylib dosyası bulunamadı!"
+            exit 1
+          fi
+          ls build/lib
