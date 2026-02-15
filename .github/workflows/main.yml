@@ -1,4 +1,4 @@
-name: Build-Dobby-iOS-Static
+name: Build-Dobby-iOS-Static-FIXED
 
 on:
   push:
@@ -16,16 +16,32 @@ jobs:
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth=1
 
-      - name: Patch Dobby CMake Bugs
+      - name: Disable environment check
         run: |
           echo ">>> Disable environment check"
-          sed -i '' '1,200d' Dobby/cmake/build_environment_check.cmake
+          rm -f Dobby/cmake/build_environment_check.cmake
           echo 'message(STATUS "Dobby environment check bypassed")' > Dobby/cmake/build_environment_check.cmake
 
-      - name: Configure & Build libdobby.a (SAFE MODE)
+      - name: FORCE disable SymbolResolver (REAL FIX)
+        run: |
+          echo ">>> Force disabling SymbolResolver everywhere"
+
+          # 1) Plugin değerini ZORLA OFF yap
+          sed -i '' 's/set(Plugin.SymbolResolver ON)/set(Plugin.SymbolResolver OFF)/g' Dobby/CMakeLists.txt
+          sed -i '' 's/Plugin.SymbolResolver: ON/Plugin.SymbolResolver: OFF/g' Dobby/CMakeLists.txt
+
+          # 2) SymbolResolver include ve add_subdirectory satırlarını öldür
+          sed -i '' '/SymbolResolver/d' Dobby/CMakeLists.txt
+
+          # 3) Plugin CMakeLists içini tamamen boşalt
+          rm -rf Dobby/builtin-plugin/SymbolResolver
+          mkdir -p Dobby/builtin-plugin/SymbolResolver
+          echo 'message(STATUS "SymbolResolver hard disabled")' > Dobby/builtin-plugin/SymbolResolver/CMakeLists.txt
+
+      - name: Configure & Build (iOS arm64)
         run: |
           cd Dobby
-          mkdir build
+          mkdir -p build
           cd build
 
           cmake .. \
@@ -35,9 +51,6 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF \
             -DDOBBY_BUILD_EXAMPLE=OFF \
             -DDOBBY_BUILD_TEST=OFF \
-            -DDOBBY_ENABLE_SYMBOL_RESOLVER=OFF \
-            -DDOBBY_ENABLE_IMPORT_TABLE_REPLACE=OFF \
-            -DDOBBY_ENABLE_NEAR_BRANCH=ON \
             -DDOBBY_DEBUG=OFF
 
           make -j$(sysctl -n hw.ncpu)
