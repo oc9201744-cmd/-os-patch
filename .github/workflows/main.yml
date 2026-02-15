@@ -1,83 +1,52 @@
-name: iOS Build Automation
+name: iOS Bypass Build
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Install Dependencies
+      - name: Setup Build Tools
         run: brew install cmake ninja
 
-      # KRİTİK: Dobby'nin o meşhur hatasını bu parametreler çözer
+      # ADIM 1: Dobby'yi "Processor not configured" hatası almadan derle
       - name: Build Dobby Library
         run: |
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
+          # KRİTİK: DARCH ve DOS parametreleri Dobby'nin içindeki hatayı susturur
           cmake -G Ninja .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_SYSROOT=iphoneos \
             -DARCH=arm64 \
             -DOS=iOS \
-            -DPLATFORM=OS64 \
-            -DDOBBY_GENERATE_SHARED=OFF \
-            -DBUILD_SHARED_LIBS=OFF
+            -DDOBBY_GENERATE_SHARED=OFF
           ninja
           cp libdobby.a ../../
 
-      # CMakeLists.txt oluştururken kütüphaneyi bağlıyoruz
-      - name: Generate CMakeLists.txt
+      # ADIM 2: Senin Bypass Kodunu (Dylib) Derle
+      - name: Compile Bypass Dylib
         run: |
-          cat <<EOF > CMakeLists.txt
-          cmake_minimum_required(VERSION 3.15)
-          project(DobbyHookExample LANGUAGES C CXX ASM)
-          
-          set(CMAKE_SYSTEM_NAME iOS)
-          set(CMAKE_OSX_ARCHITECTURES arm64)
-          set(CMAKE_OSX_DEPLOYMENT_TARGET 11.0)
-          
-          include_directories(\${CMAKE_SOURCE_DIR}/Dobby/include)
-          
-          find_library(UIKIT_LIBRARY UIKit)
-          find_library(FOUNDATION_LIBRARY Foundation)
-          
-          add_library(dobby_hook SHARED
-              main.cpp
-              DobbyHookExample.mm
-          )
-          
-          target_link_libraries(dobby_hook
-              \${CMAKE_SOURCE_DIR}/libdobby.a
-              \${UIKIT_LIBRARY}
-              \${FOUNDATION_LIBRARY}
-              c++
-          )
-          
-          set_target_properties(dobby_hook PROPERTIES
-              PREFIX ""
-              LIBRARY_OUTPUT_DIRECTORY \${CMAKE_BINARY_DIR}/lib
-          )
-          EOF
+          mkdir -p output
+          clang++ -dynamiclib -arch arm64 \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=11.0 \
+            -fobjc-arc \
+            -framework Foundation -framework UIKit \
+            -I./Dobby/include \
+            -L. -ldobby \
+            Main.cpp DobbyHookExample.mm -o output/OnurcanBypass.dylib
 
-      - name: Configure and Build
-        run: |
-          cmake -G Ninja -B build \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_ARCHITECTURES=arm64
-          ninja -C build
-
-      - name: Upload Artifact
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Onurcan-Bypass
-          path: build/lib/dobby_hook.dylib
+          name: Bypass-Dylib
+          path: output/OnurcanBypass.dylib
