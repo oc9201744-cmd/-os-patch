@@ -1,4 +1,4 @@
-name: Onurcan-Dobby-Build
+name: Onurcan-Dobby-iOS-Build
 
 on:
   push:
@@ -14,10 +14,12 @@ jobs:
 
       - name: Build Dobby (Static Library)
         run: |
+          # Dobby'yi indiriyoruz
           git clone https://github.com/jmpews/Dobby.git --depth 1
           cd Dobby
           mkdir build && cd build
-          # HATA ÇÖZÜMÜ: ARCH ve OS parametrelerini zorla veriyoruz
+          
+          # Dobby'nin içindeki CMake'i iOS için zorluyoruz
           cmake .. \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -26,12 +28,16 @@ jobs:
             -DOS=iOS \
             -DDOBBY_GENERATE_SHARED=OFF \
             -DBUILD_SHARED_LIBS=OFF
+            
           make -j$(sysctl -n hw.ncpu)
+          
+          # Çıkan libdobby.a dosyasını ana dizine kopyala
           cp libdobby.a ../../
 
-      - name: Compile Bypass Dylib
+      - name: Compile Final Dylib
         run: |
           mkdir -p output
+          # Senin Tweak.m dosyanı Dobby ile birleştiriyoruz
           clang -dynamiclib -arch arm64 \
             -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
             -miphoneos-version-min=11.0 \
@@ -39,10 +45,10 @@ jobs:
             -framework Foundation -framework UIKit \
             -I./Dobby/include \
             -L. -ldobby \
-            Tweak.m -o output/OnurcanDobby.dylib
+            Tweak.m -o output/OnurcanBypass.dylib
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Onurcan-Dobby-Bypass
-          path: output/OnurcanDobby.dylib
+          name: Onurcan-Dobby-Dylib
+          path: output/OnurcanBypass.dylib
