@@ -1,8 +1,77 @@
-- name: Compile Bypass Dylib
-  run: |
-    # SDK yolunu bul ve clang ile arm64 dylib oluştur
-    xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
-    -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-    -install_name @executable_path/Frameworks/MyBypass.dylib \
-    -L./libs -lsubstrate \
-    main.mm -o MyBypass.dylib
+name: PUBG Mobile Bypass Build (Jailbreaksiz)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Manuel tetikleme için
+
+jobs:
+  build-dylib:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Extract Offsets and Update C++
+        run: |
+          python3 <<EOF
+          import re
+
+          def get_offset(file_path, symbol):
+              try:
+                  with open(file_path, 'r') as f:
+                      for line in f:
+                          if symbol in line:
+                              match = re.search(r"0x[0-9a-fA-F]+", line)
+                              if match: return match.group(0)
+              except Exception as e:
+                  print(f"Hata: {file_path} okunamadı. {e}")
+              return "0x0"
+
+          # Dosyalarından güncel offsetleri çek
+          # Örnek: anogs.txt içindeki sembol isimlerine göre
+          offset_report = get_offset('anogs.txt', 'AnoSDKDelReportData3_0')
+          offset_get = get_offset('anogs.txt', 'AnoSDKGetReportData3_0')
+          offset_wrapper = get_offset('anogs.txt', 'sub_F012C')
+
+          print(f"Bulunan Offsetler: Report:{offset_report}, Get:{offset_get}, Wrapper:{offset_wrapper}")
+
+          # C++ dosyasındaki yer tutucuları (placeholder) gerçek offsetlerle değiştir
+          with open('main.mm', 'r') as f:
+              content = f.read()
+          
+          content = content.replace('OFFSET_DEL_REPORT', offset_report)
+          content = content.replace('OFFSET_GET_REPORT', offset_get)
+          content = content.replace('OFFSET_WRAPPER', offset_wrapper)
+
+          with open('main.mm', 'w') as f:
+              f.write(content)
+          EOF
+
+      - name: Install Theos or Substrate Headers
+        run: |
+          # Jailbreaksiz cihazlar için gereken kütüphaneleri indir
+          mkdir -p libs
+          curl -L https://github.com/theos/sdks/raw/master/iPhoneOS16.5.sdk.tar.xz -o sdk.tar.xz
+          # Substrate veya KittyMemory gibi kütüphaneleri buraya ekleyebilirsin
+
+      - name: Compile Dylib (ARM64)
+        run: |
+          xcrun --sdk iphoneos clang++ -dynamiclib -arch arm64 \
+          -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+          -miphoneos-version-min=14.0 \
+          -install_name @executable_path/Frameworks/MyBypass.dylib \
+          -framework Foundation -framework UIKit \
+          main.mm -o MyBypass.dylib
+
+      - name: Upload Dylib Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: PUBG_Bypass_Dylib
+          path: MyBypass.dylib
