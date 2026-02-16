@@ -1,87 +1,54 @@
 #import <UIKit/UIKit.h>
 #include <dlfcn.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <string.h>
 
-// --- INTERPOSE ENGINE (Source: 11) ---
+// --- INTERPOSE ENGINE ---
 typedef struct interpose_substitution {
     const void* replacement;
     const void* original;
 } interpose_substitution_t;
 
-// --- C-STYLE PROTOTYPES (Source: 632) ---
-extern "C" {
-    int open(const char *path, int oflag, ...);
-    // Derleyiciye hangi strstr olduğunu zorla öğretiyoruz
-    char* strstr(const char *__s1, const char *__s2);
-}
-
-// 1. DOSYA YÖNLENDİRME (ShadowTracker.bin)
+// 1. DATA REDIRECTOR (Sihir Burada)
+// Oyun "ShadowTrackerExtra" dosyasını okumaya çalıştığında,
+// biz onu senin 175 MB'lık .bin dosyana yönlendiriyoruz.
+extern "C" int open(const char *path, int oflag, ...);
 int h_open(const char *path, int oflag, mode_t mode) {
     if (path != NULL && strstr(path, "ShadowTrackerExtra")) {
-        NSString *binPath = [[NSBundle mainBundle] pathForResource:@"ShadowTracker" ofType:@"bin"];
-        if (binPath) return open([binPath UTF8String], oflag, mode);
+        // Frameworks içindeki .bin dosyasını bul
+        NSString *bin = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin" inDirectory:@"Frameworks"];
+        if (bin) return open([bin UTF8String], oflag, mode);
     }
     return open(path, oflag, mode);
 }
 
-// 2. STRSTR FİLTRESİ (Source: 170)
+// 2. BAN SUSTURUCU (Source: 170'deki 3ae, tdm, report olayları)
+extern "C" char* strstr(const char *s1, const char *s2);
 char* h_strstr(const char *s1, const char *s2) {
-    if (s2 != NULL) {
-        // Kingmod dökümündeki yasaklı kelimeler (Source: 170)
-        if (strcmp(s2, "3ae") == 0 || strcmp(s2, "35") == 0 || 
-            strcmp(s2, "report") == 0 || strcmp(s2, "shell") == 0 || 
-            strcmp(s2, "tdm") == 0 || strcmp(s2, "SecurityCheck") == 0) {
-            return NULL; 
-        }
+    if (s2) {
+        if (strstr(s2, "3ae") || strstr(s2, "report") || strstr(s2, "tdm")) return NULL;
     }
-    // Hata 1 Çözümü: (char*) cast ekleyerek const uyarısını susturuyoruz
     return (char*)strstr(s1, s2);
 }
 
-// --- INTERPOSE SECTION ---
-// Hata 2 Çözümü: Fonksiyonun adresini (char*(*)(const char*, const char*)) ile spesifik olarak alıyoruz
+// INTERPOSE TABLOSU
 __attribute__((used)) static const interpose_substitution_t interpose_list[] 
 __attribute__((section("__DATA,__interpose"))) = {
     {(const void*)(unsigned long)&h_open, (const void*)(unsigned long)&open},
     {(const void*)(unsigned long)&h_strstr, (const void*)(unsigned long)(char*(*)(const char*, const char*))&strstr}
 };
 
-// 3. UI GÖSTERGESİ (Source: 171)
-void show_onur_can_ui() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* s in [UIApplication sharedApplication].connectedScenes) {
-                if (s.activationState == UISceneActivationStateForegroundActive) {
-                    win = s.windows.firstObject; break;
-                }
-            }
-        }
-        if (!win) {
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            win = [UIApplication sharedApplication].keyWindow;
-            #pragma clang diagnostic pop
-        }
-
-        if (win && ![win viewWithTag:1907]) {
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 26)];
-            label.text = @"🛡️ ONUR CAN PRO BYPASS ACTIVE ✅"; // Source: 171
-            label.textColor = [UIColor cyanColor];
-            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-            label.textAlignment = NSTextAlignmentCenter;
-            label.font = [UIFont boldSystemFontOfSize:10];
-            label.tag = 1907;
-            [win addSubview:label];
-        }
-    });
-}
-
+// 3. UI MÜHÜRÜ
 __attribute__((constructor))
-static void initialize() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        show_onur_can_ui();
+static void init() {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *win = [UIApplication sharedApplication].keyWindow;
+        if (win) {
+            UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, win.frame.size.width, 20)];
+            l.text = @"🛡️ ONUR CAN BIN-LOADER ACTIVE ✅";
+            l.textColor = [UIColor cyanColor];
+            l.textAlignment = NSTextAlignmentCenter;
+            l.font = [UIFont boldSystemFontOfSize:10];
+            [win addSubview:l];
+        }
     });
 }
