@@ -3,52 +3,50 @@
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 
-// --- SAHTE (BOŞ) FONKSİYONLAR ---
-// Oyun bu fonksiyonları çağırdığında hiçbir şey olmayacak.
+// --- SAHTE FONKSİYONLAR (BOŞ) ---
+// Oyun bu fonksiyonları çağırdığında hiçbir şey olmayacak, sunucuya veri gitmeyecek.
 
-// Rapor verisi isteyen fonksiyona boş (NULL) dönüyoruz.
-void* Fake_AnoSDKGetReportData(int a) {
+// 1. Rapor İstemeyi Reddet
+void* Fake_GetReport(int a) {
     return NULL; 
 }
 
-// Rapor silme isteğini onaylıyoruz ama hiçbir şey silmiyoruz.
-void Fake_AnoSDKDelReportData(void* a) {
+// 2. Rapor Silmeyi Onayla (Ama silme)
+void Fake_DelReport(void* a) {
     return;
 }
 
-// Sunucudan gelen veri paketlerini (Ban komutu vb.) engelliyoruz.
-void Fake_AnoSDKOnRecvData(void* a, int b) {
+// 3. Sunucudan Gelen Ban Verisini Yut
+void Fake_OnRecv(void* a, int b) {
     return;
 }
 
-// Donanım bilgisi (Ioctl) isteyen fonksiyona "Başarılı" (0) deyip boş dönüyoruz.
-int Fake_AnoSDKIoctl(int a, void* b, int c) {
+// 4. Donanım Taramasını (Ioctl) Boş Geç
+// Cihaz banı yememek için burası "0" (Başarılı) dönmeli ama içi boş olmalı.
+int Fake_Ioctl(int a, void* b, int c) {
     return 0; 
 }
 
-// Eski versiyon Ioctl koruması
-int Fake_AnoSDKIoctlOld(int a, void* b, int c, int d) {
-    return 0;
-}
-
 // --- INTERPOSE YAPISI ---
-// Bu yapı, orijinal fonksiyon ile bizim sahtesini yer değiştirir.
+// Burası sihrin olduğu yer. __interpose bölümü, uygulama yüklenirken 
+// sembol tablosunu değiştirir. Kod değişmez, sadece oklar yer değiştirir.
+
 typedef struct interpose_s { 
     void *replacement; 
     void *original; 
 } interpose_t;
 
-// --- DİKKAT: BURASI SİHİRLİ KISIM ---
-// __interpose bölümü, uygulama yüklenirken sembolleri otomatik değiştirir.
-// Hafızaya yama yapmaz, sadece yönlendirmeyi değiştirir. Integrity hatası vermez.
-
 __attribute__((used)) static const interpose_t interposers[] 
 __attribute__((section("__DATA,__interpose"))) = {
-    { (void*)Fake_AnoSDKGetReportData,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKGetReportData") },
-    { (void*)Fake_AnoSDKDelReportData,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKDelReportData") },
-    { (void*)Fake_AnoSDKOnRecvData,     (void*)dlsym(RTLD_DEFAULT, "_AnoSDKOnRecvData") },
-    { (void*)Fake_AnoSDKIoctl,          (void*)dlsym(RTLD_DEFAULT, "_AnoSDKIoctl") },
-    { (void*)Fake_AnoSDKIoctlOld,       (void*)dlsym(RTLD_DEFAULT, "_AnoSDKIoctlOld") }
+    // Sadece anogs.txt dosyasında gördüğümüz EXPORT edilen fonksiyonları hedefliyoruz.
+    { (void*)Fake_GetReport,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKGetReportData") },
+    { (void*)Fake_DelReport,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKDelReportData") },
+    { (void*)Fake_OnRecv,     (void*)dlsym(RTLD_DEFAULT, "_AnoSDKOnRecvData") },
+    { (void*)Fake_Ioctl,      (void*)dlsym(RTLD_DEFAULT, "_AnoSDKIoctl") },
+    // Ek güvenlik önlemleri (Varsa)
+    { (void*)Fake_GetReport,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKGetReportData2") },
+    { (void*)Fake_GetReport,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKGetReportData3") },
+    { (void*)Fake_GetReport,  (void*)dlsym(RTLD_DEFAULT, "_AnoSDKGetReportData4") },
 };
 
 // --- UI GÖSTERGESİ ---
@@ -57,13 +55,14 @@ void show_v19_label() {
         UIWindow *win = [UIApplication sharedApplication].keyWindow;
         if (!win) win = [UIApplication sharedApplication].windows.firstObject;
         
-        if (win) {
+        if (win && ![win viewWithTag:2026]) {
             UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, win.frame.size.width, 20)];
             lbl.text = @"🛡️ ONUR CAN: INTEGRITY SAFE v19 ✅";
             lbl.textColor = [UIColor greenColor];
             lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.6];
             lbl.textAlignment = NSTextAlignmentCenter;
             lbl.font = [UIFont boldSystemFontOfSize:10];
+            lbl.tag = 2026;
             [win addSubview:lbl];
         }
     });
@@ -72,9 +71,9 @@ void show_v19_label() {
 // --- BAŞLATICI ---
 __attribute__((constructor))
 static void initialize() {
-    // 20 Saniye sonra sadece yazıyı gösteriyoruz.
-    // Interpose işlemi oyun açılır açılmaz işletim sistemi tarafından yapıldığı için
-    // burada ekstra bir hook kodu çalıştırmamıza gerek yok.
+    // Interpose işlemi iOS tarafından uygulama yüklenirken otomatik yapılır.
+    // Bizim ekstra bir şey yapmamıza gerek yok.
+    // Sadece yazıyı göstermek için lobiye kadar (20sn) bekliyoruz.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         show_v19_label();
     });
