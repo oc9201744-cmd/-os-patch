@@ -9,41 +9,28 @@
 #import <mach/mach.h>
 #import <UIKit/UIKit.h>
 
-#pragma mark - Inline Hook Engine (substrate.h gerektirmez)
+#pragma mark - STEALTH INLINE HOOK ENGINE (Anti-Integrity Check)
 
 #if __arm64__ || __aarch64__
 
-typedef struct {
-    void *target;
-    void *replacement;
-    void **original;
-} HookEntry;
-
-static int WriteMemory(void *addr, const void *data, size_t size) {
-    kern_return_t kr;
-    vm_address_t page = (vm_address_t)addr & ~(vm_address_t)(0x4000 - 1);
-    vm_size_t page_size = 0x4000;
-
+// Hafıza izinlerini değiştirmek için güvenli fonksiyon
+static int SetMemoryProtection(void *addr, size_t size, int protection) {
     mach_port_t task = mach_task_self();
-    kr = vm_protect(task, page, page_size, false, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    if (kr != KERN_SUCCESS) {
-        kr = vm_protect(task, page, page_size, false, VM_PROT_READ | VM_PROT_WRITE);
-        if (kr != KERN_SUCCESS) return -1;
-    }
+    vm_address_t page = (vm_address_t)addr & ~(vm_address_t)(0x4000 - 1);
+    vm_address_t end_page = ((vm_address_t)addr + size + 0x4000 - 1) & ~(vm_address_t)(0x4000 - 1);
+    vm_size_t page_size = end_page - page;
 
-    memcpy(addr, data, size);
-
-    kr = vm_protect(task, page, page_size, false, VM_PROT_READ | VM_PROT_EXECUTE);
-    sys_icache_invalidate(addr, size);
-
-    return 0;
+    kern_return_t kr = vm_protect(task, page, page_size, false, protection);
+    return (kr == KERN_SUCCESS) ? 0 : -1;
 }
 
-static void *CreateTrampoline(void *target) {
-    void *trampoline = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC,
-                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
+// Trambolin oluştururken RWX yerine önce RW sonra RX yapıyoruz (Bu banı engeller)
+static void *CreateStealthTrampoline(void *target) {
+    // 1. Sayfayı oluştur (Sadece RW)
+    void *trampoline = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
     if (trampoline == MAP_FAILED) return NULL;
 
+    // 2. Orijinal kodları kopyala
     uint32_t origInstructions[4];
     memcpy(origInstructions, target, 16);
 
@@ -51,24 +38,28 @@ static void *CreateTrampoline(void *target) {
     memcpy(p, origInstructions, 16);
     p += 16;
 
+    // 3. Geri dönüş adresini hesapla
     uintptr_t resumeAddr = (uintptr_t)target + 16;
 
+    // 4. Atla (Branch) kodlarını yaz
     uint32_t ldr_x16 = 0x58000050;
     uint32_t br_x16 = 0xD61F0200;
     memcpy(p, &ldr_x16, 4); p += 4;
     memcpy(p, &br_x16, 4); p += 4;
     memcpy(p, &resumeAddr, 8);
 
+    // 5. KRİTİK ADIM: Sayfayı RX (Read-Execute) yap. RWX bırakırsan ban yersin!
+    mprotect(trampoline, 0x4000, PROT_READ | PROT_EXEC);
     sys_icache_invalidate(trampoline, 0x4000);
 
     return trampoline;
 }
 
-static int InlineHook(void *target, void *replacement, void **origOut) {
+static int StealthHook(void *target, void *replacement, void **origOut) {
     if (!target || !replacement) return -1;
 
     if (origOut) {
-        void *trampoline = CreateTrampoline(target);
+        void *trampoline = CreateStealthTrampoline(target);
         if (!trampoline) return -1;
         *origOut = trampoline;
     }
@@ -82,41 +73,22 @@ static int InlineHook(void *target, void *replacement, void **origOut) {
     memcpy(hookCode + 4, &br_x16, 4);
     memcpy(hookCode + 8, &addr, 8);
 
-    return WriteMemory(target, hookCode, 16);
-}
+    // Hedef adresi yazılabilir yap (RW)
+    SetMemoryProtection(target, 16, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    
+    // Kodu yaz
+    memcpy(target, hookCode, 16);
+    
+    // Hedef adresi tekrar sadece çalıştırılabilir yap (RX) -> Bütünlük Kontrolü Buraya Bakar!
+    SetMemoryProtection(target, 16, VM_PROT_READ | VM_PROT_EXECUTE);
+    sys_icache_invalidate(target, 16);
 
-#define MSHookFunction(target, replacement, original) InlineHook((void*)(target), (void*)(replacement), (void**)(original))
+    return 0;
+}
 
 #endif
 
-#pragma mark - UI GÖSTERGESİ (Eklediğim Bölüm)
-
-void show_success_label() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject; break;
-                }
-            }
-        }
-        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
-
-        if (window && ![window viewWithTag:2026]) {
-            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, window.frame.size.width, 25)];
-            lbl.text = @"🛡️ ONUR CAN: PRECISION BYPASS ACTIVE ✅";
-            lbl.textColor = [UIColor greenColor];
-            lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-            lbl.textAlignment = NSTextAlignmentCenter;
-            lbl.font = [UIFont boldSystemFontOfSize:11];
-            lbl.tag = 2026;
-            [window addSubview:lbl];
-        }
-    });
-}
-
-#pragma mark - Base Address Finder
+#pragma mark - POINTERS & LOGIC
 
 static uintptr_t getBaseAddress(const char *imageName) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
@@ -128,7 +100,26 @@ static uintptr_t getBaseAddress(const char *imageName) {
     return 0;
 }
 
-#pragma mark - AnoSDK Hooks (Senin Orijinal Ofsetlerin)
+// --- UI ---
+void show_integrity_label() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *win = [UIApplication sharedApplication].keyWindow;
+        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
+        if (win && ![win viewWithTag:999]) {
+            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 25)];
+            lbl.text = @"🛡️ ONUR CAN: STEALTH INTEGRITY FIX ✅";
+            lbl.textColor = [UIColor greenColor];
+            lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            lbl.textAlignment = NSTextAlignmentCenter;
+            lbl.font = [UIFont boldSystemFontOfSize:11];
+            lbl.tag = 999;
+            [win addSubview:lbl];
+        }
+    });
+}
+
+// --- OFFSET HOOKS (Sadece AnoSDK) ---
+// Sistem fonksiyonlarına (memcpy, gettimeofday) hook atmıyoruz çünkü bütünlüğü bozan onlar.
 
 static void (*orig_AnoSDKDelReportData3)(void *arg);
 static void hook_AnoSDKDelReportData3(void *arg) { return; }
@@ -145,73 +136,43 @@ static void *hook_AnoSDKGetReportData4(int arg) { return NULL; }
 static void (*orig_sub_4A130)(void);
 static void hook_sub_4A130(void) { return; }
 
-static struct tm *(*orig_gmtime)(const time_t *timep);
-static struct tm fake_tm;
-static struct tm *hook_gmtime(const time_t *timep) {
-    struct tm *result = orig_gmtime(timep);
-    if (!result) {
-        memset(&fake_tm, 0, sizeof(fake_tm));
-        return &fake_tm;
-    }
-    return result;
-}
-
-static int (*orig_gettimeofday)(struct timeval *tv, void *tz);
-static int hook_gettimeofday(struct timeval *tv, void *tz) { return orig_gettimeofday(tv, tz); }
-
-static int (*orig_clock_gettime)(clockid_t clk_id, struct timespec *tp);
-static int hook_clock_gettime(clockid_t clk_id, struct timespec *tp) { return orig_clock_gettime(clk_id, tp); }
-
-static void *(*orig_memcpy)(void *dest, const void *src, size_t n);
-static void *hook_memcpy(void *dest, const void *src, size_t n) {
-    if (src && n >= 13) {
-        const char *s = (const char *)src;
-        if (memcmp(s, "cheat_open_id", 13) == 0) return dest;
-    }
-    return orig_memcpy(dest, src, n);
-}
-
 static void (*orig_sub_E6FDC)(void *arg0, void *arg1, void *arg2);
 static void hook_sub_E6FDC(void *arg0, void *arg1, void *arg2) { return; }
 
-static void installHooksWithBase(uintptr_t base) {
-    MSHookFunction((void *)(base + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
-    MSHookFunction((void *)(base + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
-    MSHookFunction((void *)(base + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
-    MSHookFunction((void *)(base + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
-    MSHookFunction((void *)(base + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
-    MSHookFunction((void *)(base + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
+// --- INSTALLER ---
+
+static void installSafeHooks(uintptr_t base) {
+    // Sadece oyunun kendi fonksiyonlarını kancalıyoruz.
+    // Sistem fonksiyonlarına dokunmuyoruz (Anti-Ban).
+    StealthHook((void *)(base + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
+    StealthHook((void *)(base + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
+    StealthHook((void *)(base + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
+    StealthHook((void *)(base + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
+    StealthHook((void *)(base + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
+    StealthHook((void *)(base + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
 }
 
-#pragma mark - Constructor
+// --- CONSTRUCTOR ---
 
 __attribute__((constructor))
-static void tweak_init(void) {
-    @autoreleasepool {
+static void initialize() {
+    // 35 Saniye Bekle (Bütünlük Taraması Tamamen Bitsin)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         const char *targetLib = "anogs";
         uintptr_t base = getBaseAddress(targetLib);
 
-        if (!base) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                uintptr_t b = getBaseAddress(targetLib);
-                if (b) {
-                    installHooksWithBase(b);
-                    show_success_label(); // Yazıyı ekle
-                }
-            });
-            return;
+        if (base) {
+            installSafeHooks(base);
+            show_integrity_label();
+        } else {
+            // Eğer anogs bulunamazsa 5 saniye daha dene
+             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                 uintptr_t retryBase = getBaseAddress(targetLib);
+                 if (retryBase) {
+                     installSafeHooks(retryBase);
+                     show_integrity_label();
+                 }
+             });
         }
-
-        installHooksWithBase(base);
-        
-        MSHookFunction((void *)gettimeofday, (void *)hook_gettimeofday, (void **)&orig_gettimeofday);
-        MSHookFunction((void *)gmtime, (void *)hook_gmtime, (void **)&orig_gmtime);
-        MSHookFunction((void *)clock_gettime, (void *)hook_clock_gettime, (void **)&orig_clock_gettime);
-        MSHookFunction((void *)memcpy, (void *)hook_memcpy, (void **)&orig_memcpy);
-
-        // Yazıyı lobi zamanında göster (15 saniye gecikmeli)
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            show_success_label();
-        });
-    }
+    });
 }
