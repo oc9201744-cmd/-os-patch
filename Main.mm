@@ -6,7 +6,7 @@
 #import <sys/mman.h>
 #import <libkern/OSCacheControl.h>
 #import <Foundation/Foundation.h>
-
+#import <mach/mach.h>
 #pragma mark - Inline Hook Engine (substrate.h gerektirmez)
 
 #if __arm64__ || __aarch64__
