@@ -3,6 +3,14 @@
 #include <dlfcn.h>
 #include <unistd.h>
 
+// --- FONKSİYON TANIMLAMALARI (Hata Alan Kısım Burasıydı) ---
+// Derleyiciye bu fonksiyonların dışarıda bir yerde olduğunu söylüyoruz.
+extern "C" {
+    void* _AnoSDKGetReportData(void* a1, void* a2);
+    void _AnoSDKDelReportData(void* a1);
+    int ptrace(int request, int pid, void* addr, int data);
+}
+
 // --- INTERPOSE ALTYAPISI ---
 typedef struct interpose_substitution {
     const void* replacement;
@@ -13,22 +21,20 @@ typedef struct interpose_substitution {
     __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
     __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
 
-// 1. ANOSDK RAPOR SUSTURUCU (Yeni Analizine Göre)
-// Oyun rapor verisi istediğinde boş veri döndürerek sunucuyu kandırır.
+// 1. ANOSDK RAPOR SUSTURUCU
 void* h_AnoSDKGetReportData(void* a1, void* a2) {
-    return NULL; // Rapor verisini yok et
+    return NULL; 
 }
 INTERPOSE_FUNCTION(h_AnoSDKGetReportData, _AnoSDKGetReportData);
 
 void h_AnoSDKDelReportData(void* a1) {
-    return; // Silme işlemini simüle et
+    return; 
 }
 INTERPOSE_FUNCTION(h_AnoSDKDelReportData, _AnoSDKDelReportData);
 
-// 2. BAN FLAG FİLTRESİ (Senin verdiğin h_strcmp yapısı)
+// 2. BAN FLAG FİLTRESİ (Senin Bypass Mantığın)
 int h_strcmp(const char *s1, const char *s2) {
     if (s1 && s2) {
-        // Analizindeki shell_report, tdm_report ve 0x35 gibi flagleri susturur
         if (strstr(s2, "3ae") || strstr(s2, "35") || strstr(s2, "report") || 
             strstr(s2, "shell") || strstr(s2, "tdm") || strstr(s2, "SecurityCheck")) {
             return 1; 
@@ -38,9 +44,10 @@ int h_strcmp(const char *s1, const char *s2) {
 }
 INTERPOSE_FUNCTION(h_strcmp, strcmp);
 
-// 3. ANTİ-DEBUGGER (ptrace)
-extern "C" int ptrace(int request, int pid, void* addr, int data);
-int h_ptrace(int request, int pid, void* addr, int data) { return 0; }
+// 3. ANTİ-DEBUGGER
+int h_ptrace(int request, int pid, void* addr, int data) { 
+    return 0; 
+}
 INTERPOSE_FUNCTION(h_ptrace, ptrace);
 
 // --- İNATÇI UI MOTORU (Yazıyı Getiren Kısım) ---
@@ -56,7 +63,14 @@ void force_show_onur_can_text() {
                 }
             }
         }
-        if (!activeWindow) activeWindow = [UIApplication sharedApplication].keyWindow;
+        
+        // keyWindow uyarısını susturmak için alternatif yöntem
+        if (!activeWindow) {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            activeWindow = [UIApplication sharedApplication].keyWindow;
+            #pragma clang diagnostic pop
+        }
 
         if (activeWindow) {
             if ([activeWindow viewWithTag:1907]) return;
@@ -70,7 +84,7 @@ void force_show_onur_can_text() {
             label.layer.zPosition = 9999;
             [activeWindow addSubview:label];
         }
-        // Yazı kaybolursa 3 saniyede bir geri getirir
+        
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             force_show_onur_can_text();
         });
