@@ -1,9 +1,93 @@
-#import <substrate.h>
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import <string.h>
 #import <sys/time.h>
 #import <time.h>
+#import <sys/mman.h>
+#import <libkern/OSCacheControl.h>
+#import <Foundation/Foundation.h>
+
+#pragma mark - Inline Hook Engine (substrate.h gerektirmez)
+
+#if __arm64__ || __aarch64__
+
+typedef struct {
+    void *target;
+    void *replacement;
+    void **original;
+} HookEntry;
+
+static int WriteMemory(void *addr, const void *data, size_t size) {
+    kern_return_t kr;
+    vm_address_t page = (vm_address_t)addr & ~(vm_address_t)(0x4000 - 1);
+    vm_size_t page_size = 0x4000;
+
+    mach_port_t task = mach_task_self();
+    kr = vm_protect(task, page, page_size, false, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    if (kr != KERN_SUCCESS) {
+        kr = vm_protect(task, page, page_size, false, VM_PROT_READ | VM_PROT_WRITE);
+        if (kr != KERN_SUCCESS) return -1;
+    }
+
+    memcpy(addr, data, size);
+
+    kr = vm_protect(task, page, page_size, false, VM_PROT_READ | VM_PROT_EXECUTE);
+    sys_icache_invalidate(addr, size);
+
+    return 0;
+}
+
+static void *CreateTrampoline(void *target) {
+    void *trampoline = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC,
+                            MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
+    if (trampoline == MAP_FAILED) return NULL;
+
+    uint32_t origInstructions[4];
+    memcpy(origInstructions, target, 16);
+
+    uint8_t *p = (uint8_t *)trampoline;
+    memcpy(p, origInstructions, 16);
+    p += 16;
+
+    uintptr_t resumeAddr = (uintptr_t)target + 16;
+
+    uint32_t ldr_x16 = 0x58000050;
+    uint32_t br_x16 = 0xD61F0200;
+    memcpy(p, &ldr_x16, 4); p += 4;
+    memcpy(p, &br_x16, 4); p += 4;
+    memcpy(p, &resumeAddr, 8);
+
+    sys_icache_invalidate(trampoline, 0x4000);
+
+    return trampoline;
+}
+
+static int InlineHook(void *target, void *replacement, void **origOut) {
+    if (!target || !replacement) return -1;
+
+    if (origOut) {
+        void *trampoline = CreateTrampoline(target);
+        if (!trampoline) return -1;
+        *origOut = trampoline;
+    }
+
+    uint8_t hookCode[16];
+    uint32_t ldr_x16 = 0x58000050;
+    uint32_t br_x16 = 0xD61F0200;
+    uintptr_t addr = (uintptr_t)replacement;
+
+    memcpy(hookCode, &ldr_x16, 4);
+    memcpy(hookCode + 4, &br_x16, 4);
+    memcpy(hookCode + 8, &addr, 8);
+
+    return WriteMemory(target, hookCode, 16);
+}
+
+#define MSHookFunction(target, replacement, original) InlineHook((void*)(target), (void*)(replacement), (void**)(original))
+
+#endif
+
+#pragma mark - Base Address Finder
 
 static uintptr_t getBaseAddress(const char *imageName) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
@@ -15,35 +99,35 @@ static uintptr_t getBaseAddress(const char *imageName) {
     return 0;
 }
 
-#pragma mark - AnoSDKDelReportData3 Hook (0xF117C / 0x2DCC8)
+#pragma mark - AnoSDKDelReportData3 Hook (export: 0xF117C, impl: 0x2DCC8)
 
 static void (*orig_AnoSDKDelReportData3)(void *arg);
 static void hook_AnoSDKDelReportData3(void *arg) {
     return;
 }
 
-#pragma mark - AnoSDKGetReportData3 Hook (0xF1178 / 0x2DC90)
+#pragma mark - AnoSDKGetReportData3 Hook (export: 0xF1178, impl: 0x2DC90)
 
 static void *(*orig_AnoSDKGetReportData3)(void);
 static void *hook_AnoSDKGetReportData3(void) {
     return NULL;
 }
 
-#pragma mark - AnoSDKDelReportData4 Hook (0xF1184 / 0x2DD98)
+#pragma mark - AnoSDKDelReportData4 Hook (export: 0xF1184, impl: 0x2DD98)
 
 static void (*orig_AnoSDKDelReportData4)(void *arg);
 static void hook_AnoSDKDelReportData4(void *arg) {
     return;
 }
 
-#pragma mark - AnoSDKGetReportData4 Hook (0xF1180 / 0x2DD5C)
+#pragma mark - AnoSDKGetReportData4 Hook (export: 0xF1180, impl: 0x2DD5C)
 
 static void *(*orig_AnoSDKGetReportData4)(int arg);
 static void *hook_AnoSDKGetReportData4(int arg) {
     return NULL;
 }
 
-#pragma mark - cheat_open_id reporter (sub_4A130)
+#pragma mark - cheat_open_id Reporter Hook (sub_4A130)
 
 static void (*orig_sub_4A130)(void);
 static void hook_sub_4A130(void) {
@@ -90,67 +174,47 @@ static void *hook_memcpy(void *dest, const void *src, size_t n) {
     return orig_memcpy(dest, src, n);
 }
 
-#pragma mark - sub_E6FDC (gmtime timestamp converter for ban)
+#pragma mark - sub_E6FDC (gmtime timestamp converter - ban zaman damgasi)
 
 static void (*orig_sub_E6FDC)(void *arg0, void *arg1, void *arg2);
 static void hook_sub_E6FDC(void *arg0, void *arg1, void *arg2) {
     return;
 }
 
+#pragma mark - Hook Installer
+
+static void installHooksWithBase(uintptr_t base) {
+    MSHookFunction((void *)(base + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
+    MSHookFunction((void *)(base + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
+    MSHookFunction((void *)(base + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
+    MSHookFunction((void *)(base + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
+    MSHookFunction((void *)(base + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
+    MSHookFunction((void *)(base + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
+}
+
 #pragma mark - Constructor
 
-%ctor {
+__attribute__((constructor))
+static void tweak_init(void) {
     @autoreleasepool {
         const char *targetLib = "anogs";
-        uintptr_t base = 0;
-
-        for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-            const char *name = _dyld_get_image_name(i);
-            if (name && strstr(name, targetLib)) {
-                base = (uintptr_t)_dyld_get_image_header(i);
-                break;
-            }
-        }
+        uintptr_t base = getBaseAddress(targetLib);
 
         if (!base) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-                    const char *name = _dyld_get_image_name(i);
-                    if (name && strstr(name, targetLib)) {
-                        uintptr_t b = (uintptr_t)_dyld_get_image_header(i);
-                        if (b) {
-                            MSHookFunction((void *)(b + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
-                            MSHookFunction((void *)(b + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
-                            MSHookFunction((void *)(b + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
-                            MSHookFunction((void *)(b + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
-                            MSHookFunction((void *)(b + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
-                            MSHookFunction((void *)(b + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
-                        }
-                        break;
-                    }
+                uintptr_t b = getBaseAddress(targetLib);
+                if (b) {
+                    installHooksWithBase(b);
                 }
             });
             return;
         }
 
-        MSHookFunction((void *)(base + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
-
-        MSHookFunction((void *)(base + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
-
-        MSHookFunction((void *)(base + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
-
-        MSHookFunction((void *)(base + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
-
-        MSHookFunction((void *)(base + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
-
-        MSHookFunction((void *)(base + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
+        installHooksWithBase(base);
 
         MSHookFunction((void *)gettimeofday, (void *)hook_gettimeofday, (void **)&orig_gettimeofday);
-
         MSHookFunction((void *)gmtime, (void *)hook_gmtime, (void **)&orig_gmtime);
-
         MSHookFunction((void *)clock_gettime, (void *)hook_clock_gettime, (void **)&orig_clock_gettime);
-
         MSHookFunction((void *)memcpy, (void *)hook_memcpy, (void **)&orig_memcpy);
     }
 }
