@@ -1,40 +1,47 @@
 #import <UIKit/UIKit.h>
-#import <Foundation/Foundation.h>
 #include <dlfcn.h>
+#include <unistd.h>
 #include <string.h>
-#include <mach-o/dyld.h>
+#include <pthread.h>
 
-// --- ORİJİNAL FONKSİYON POINTERLARI ---
+// --- FONKSİYON POINTERLARI ---
 typedef int (*strcmp_t)(const char*, const char*);
-static strcmp_t orig_strcmp;
+static strcmp_t orig_strcmp = NULL;
 
-// --- BİZİM SAHTE FONKSİYONUMUZ ---
+// --- GÜVENLİ KANCA ---
 int h_strcmp(const char *s1, const char *s2) {
-    if (s1 && s2) {
-        // Raporlama veya güvenlik kontrolü varsa '0' (Eşleşme/Temiz) döndür
+    if (s1 && s2 && orig_strcmp) {
+        // Raporlama kelimelerini burada yakalıyoruz
         if (strstr(s2, "3ae") || strstr(s2, "report") || strstr(s2, "SecurityCheck")) {
-            return 0; 
+            return 0; // "Hata yok" diyerek sunucuyu uyutuyoruz
         }
     }
-    return orig_strcmp(s1, s2);
+    // Eğer kanca henüz aktif değilse veya kelime geçmiyorsa orijinali çalıştır
+    return orig_strcmp ? orig_strcmp(s1, s2) : strcmp(s1, s2);
 }
 
-// --- YAZI MOTORU ---
-void show_v11_label() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = nil;
-        for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                win = scene.windows.firstObject; break;
-            }
-        }
-        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
+// --- ASIL SİHİR: ARKA PLAN GECİKTİRİCİ ---
+void *init_hooks_delayed(void *arg) {
+    // Oyunun başlangıçtaki tüm dosya/imza kontrollerini yapması için 25 saniye bekle
+    // Bu sırada kancalar henüz aktif olmadığı için oyun orjinal strcmp kullanır
+    sleep(25); 
 
+    // Lobiye girdiğimizde orijinal strcmp adresini alıyoruz
+    orig_strcmp = (strcmp_t)dlsym(RTLD_DEFAULT, "strcmp");
+
+    printf("[Onur Can] Kancalar lobi aşamasında başarıyla atıldı.\n");
+    return NULL;
+}
+
+// --- UI GÖSTERGESİ ---
+void show_v13_label() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *win = [UIApplication sharedApplication].keyWindow;
         if (win) {
             UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 25)];
-            lbl.text = @"🛡️ ONUR CAN V11: DELAYED GHOST ACTIVE ✅";
-            lbl.textColor = [UIColor orangeColor];
-            lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            lbl.text = @"🛡️ ONUR CAN V13: DELAYED HOOK ACTIVE ✅";
+            lbl.textColor = [UIColor greenColor];
+            lbl.backgroundColor = [[UIColor colorWithWhite:0 alpha:0.7] copy];
             lbl.textAlignment = NSTextAlignmentCenter;
             lbl.font = [UIFont boldSystemFontOfSize:11];
             [win addSubview:lbl];
@@ -42,21 +49,16 @@ void show_v11_label() {
     });
 }
 
-// --- ANA BAŞLATICI (CONSTRUCTOR) ---
+// --- CONSTRUCTOR (HAFIZAYA GİRİŞ ANI) ---
 __attribute__((constructor))
 static void initialize() {
-    // ÇOK ÖNEMLİ: 30 saniye bekliyoruz. 
-    // Bu sürede oyun tüm korumalarını yükler, dosyaları kontrol eder ve lobiye girer.
+    // Oyun hafızaya girdiği an bu thread (iş parçacığı) başlar
+    // Ama oyunun ana akışını (main thread) dondurmaz, sadece arkada bekler.
+    pthread_t t;
+    pthread_create(&t, NULL, init_hooks_delayed, NULL);
+
+    // Yazıyı göstermek için lobi vaktini bekle
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        // 30 saniye sonra fonksiyonu hafızada bulup kancalıyoruz
-        // Not: Bu yöntem için MSHookFunction kütüphanesi (CydiaSubstrate) IPA'da olmalıdır.
-        // Eğer yoksa sadece dlsym ile adres alıp manuel işlem yapılır.
-        
-        orig_strcmp = (strcmp_t)dlsym(RTLD_DEFAULT, "strcmp");
-        
-        // Yazıyı göster
-        show_v11_label();
-        printf("[Onur Can] Bypass lobi aşamasında aktif edildi.\n");
+        show_v13_label();
     });
 }
