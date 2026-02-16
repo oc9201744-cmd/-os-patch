@@ -1,54 +1,60 @@
 #import <UIKit/UIKit.h>
-#include <sys/mman.h>
-#include <mach-o/dyld.h>
 #include <dlfcn.h>
 
-void show_bypass_label() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject;
-                    break;
-                }
-            }
-        }
-        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
+// --- INTERPOSE ENGINE ---
+typedef struct { const void* replacement; const void* original; } interpose_t;
 
-        if (window && ![window viewWithTag:2026]) {
-            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, window.frame.size.width, 20)];
-            lbl.text = @"🛡️ ONUR CAN SMART GHOST ACTIVE ✅";
-            lbl.textColor = [UIColor greenColor];
-            lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
-            lbl.textAlignment = NSTextAlignmentCenter;
-            lbl.font = [UIFont boldSystemFontOfSize:9];
-            lbl.tag = 2026;
-            [window addSubview:lbl];
+// 1. ANOSDK TÜM KANALLARI SUSTURMA
+// Rapor isteyen tüm fonksiyonları 'Hiçbir şey yok' (NULL) döndürecek şekilde yamalıyoruz.
+extern "C" void* _AnoSDKGetReportData(int a, int b);
+extern "C" void* _AnoSDKGetReportData2(int a, int b);
+extern "C" void* _AnoSDKGetReportData3(int a, int b);
+extern "C" void* _AnoSDKGetReportData4(int a, int b);
+extern "C" int _AnoSDKIoctl(int a, int b, void* c);
+
+void* h_GetReport(int a, int b) { return NULL; }
+int h_AnoSDKIoctl(int a, int b, void* c) { return 0; } // I/O kontrollerini onayla ama veri verme
+
+// 2. TDM (TENCENT DATA MASTER) SUSTURMA
+// TDM, verileri genelde string (metin) üzerinden paketler.
+extern "C" char* strstr(const char *s1, const char *s2);
+char* h_strstr(const char *s1, const char *s2) {
+    if (s2 && (strstr(s2, "tdm_") || strstr(s2, "report") || strstr(s2, "AnoSDK"))) {
+        return NULL;
+    }
+    return (char*)strstr(s1, s2);
+}
+
+// 3. UI - DURUM GÖSTERGESİ
+void show_eraser_label() {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *win = [[UIApplication sharedApplication] keyWindow]; // Uyarı verirse önceki Scene mantığını kullan
+        if (win) {
+            UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, win.frame.size.width, 18)];
+            l.text = @"🛡️ ONUR CAN: TOTAL REPORT ERASER ACTIVE ✅";
+            l.textColor = [UIColor cyanColor];
+            l.backgroundColor = [UIColor colorWithWhite:0 alpha:0.6];
+            l.textAlignment = NSTextAlignmentCenter;
+            l.font = [UIFont systemFontOfSize:8 weight:UIFontWeightBold];
+            [win addSubview:l];
         }
     });
 }
 
+// --- INTERPOSE TABLOSU ---
+__attribute__((used)) static const interpose_t interpose_list[] 
+__attribute__((section("__DATA,__interpose"))) = {
+    {(const void*)&h_GetReport, (const void*)&_AnoSDKGetReportData},
+    {(const void*)&h_GetReport, (const void*)&_AnoSDKGetReportData2},
+    {(const void*)&h_GetReport, (const void*)&_AnoSDKGetReportData3},
+    {(const void*)&h_GetReport, (const void*)&_AnoSDKGetReportData4},
+    {(const void*)&h_AnoSDKIoctl, (const void*)&_AnoSDKIoctl},
+    {(const void*)&h_strstr, (const void*)&strstr}
+};
+
 __attribute__((constructor))
-static void start_smart_lockdown() {
-    // 15 saniye bekle (Oyunun tüm kontrolleri bitirmesi için)
+static void init() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        uint32_t count = _dyld_image_count();
-        for (uint32_t i = 0; i < count; i++) {
-            const char *name = _dyld_get_image_name(i);
-            
-            if (name && strstr(name, "anogs")) {
-                uintptr_t base_addr = (uintptr_t)_dyld_get_image_header(i);
-                
-                // --- STRATEJİ DEĞİŞİKLİĞİ ---
-                // PROT_READ: Oyun dosyayı okuyabilsin (Crash yapmaz)
-                // Yazma (Write) ve Yürütme (Exec) YASAK!
-                // Böylece rapor oluşturamaz ve tarama yapamaz.
-                mprotect((void *)(base_addr & ~PAGE_MASK), PAGE_SIZE * 1000, PROT_READ);
-                break;
-            }
-        }
-        show_bypass_label();
+        show_eraser_label();
     });
 }
