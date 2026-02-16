@@ -1,40 +1,13 @@
 #import <UIKit/UIKit.h>
+#include <sys/mman.h>
+#include <mach-o/dyld.h>
 #include <dlfcn.h>
-#include <string.h>
 
-// --- INTERPOSE ENGINE ---
-typedef struct {
-    const void* replacement;
-    const void* original;
-} interpose_t;
-
-// 1. ANOSDK REPORT BYPASS (Hata Almayan Dinamik Versiyon)
-// Bu fonksiyonu dlsym ile bağlayacağımız için imzasını tanımlıyoruz
-typedef void* (*AnoSDKGetReportData_t)(int, int);
-
-void* h_AnoSDKGetReportData(int a1, int a2) {
-    // SDK 1 ve 4 gibi flagler beklediğinde, akışı bozmadan sessizce NULL döner.
-    // Bu, sunucuya "Raporlanacak bir ihlal yok" mesajı gönderir.
-    return NULL; 
-}
-
-// 2. STRING BYPASS (REPORT, tdm_report, shell_report)
-extern "C" char* strstr(const char *s1, const char *s2);
-char* h_strstr(const char *s1, const char *s2) {
-    if (s2) {
-        if (s2[0] == 'R' || s2[0] == 't' || s2[0] == 's') {
-            if (strstr(s2, "REPORT") || strstr(s2, "tdm_") || strstr(s2, "shell_")) {
-                return NULL;
-            }
-        }
-    }
-    return (char*)strstr(s1, s2);
-}
-
-// 3. UI KATMANI (Deprecation Hatası Giderildi)
+// --- UI GÖSTERİM FONKSİYONU ---
 void show_bypass_label() {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
+        // Modern iOS (13+) için pencere yakalama
         if (@available(iOS 13.0, *)) {
             for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
                 if (scene.activationState == UISceneActivationStateForegroundActive) {
@@ -43,6 +16,7 @@ void show_bypass_label() {
                 }
             }
         }
+        // Eski sürümler için fallback
         if (!window) window = [UIApplication sharedApplication].windows.firstObject;
 
         if (window && ![window viewWithTag:2026]) {
@@ -58,23 +32,32 @@ void show_bypass_label() {
     });
 }
 
-// --- INTERPOSE LİSTESİ ---
-__attribute__((used)) static const interpose_t interpose_list[] 
-__attribute__((section("__DATA,__interpose"))) = {
-    {(const void*)(unsigned long)&h_strstr, (const void*)(unsigned long)(char*(*)(const char*, const char*))&strstr}
-};
-
+// --- ANA KONTROL MERKEZİ ---
 __attribute__((constructor))
-static void initialize() {
-    // AnoSDK fonksiyonunu hafızada bul ve kancala
-    void* symbol = dlsym(RTLD_DEFAULT, "_AnoSDKGetReportData");
-    if (symbol) {
-        // Not: Interpose statik olduğu için dlsym ile gelen sembolü 
-        // manuel olarak kancalamak veya mprotect ile patchlemek gerekebilir.
-        // Ancak çoğu durumda bu sembolün susturulması yeterlidir.
-    }
+static void initialize_ano_killer() {
+    // Oyunun ve anogs framework'ün yüklenmesi için 12 saniye bekle
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        // 1. ADIM: ANOGS HAFIZA İZİNLERİNİ KAPAT (RWX KILL)
+        uint32_t count = _dyld_image_count();
+        BOOL killed = NO;
+        
+        for (uint32_t i = 0; i < count; i++) {
+            const char *name = _dyld_get_image_name(i);
+            if (name && strstr(name, "anogs")) {
+                uintptr_t base_addr = (uintptr_t)_dyld_get_image_header(i);
+                
+                // Kütüphanenin tüm yetkilerini (Okuma, Yazma, Yürütme) elinden alıyoruz.
+                // PROT_NONE = Tam koruma, SDK artık hiçbir yere erişemez.
+                if (mprotect((void *)(base_addr & ~PAGE_MASK), PAGE_SIZE * 800, PROT_NONE) == 0) {
+                    killed = YES;
+                }
+                break;
+            }
+        }
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        // 2. ADIM: YAZIYI GÖSTER
+        // NOT: anogs bulunsa da bulunmasa da bypass'ın yüklendiğini teyit etmek için yazıyı basıyoruz.
         show_bypass_label();
     });
 }
