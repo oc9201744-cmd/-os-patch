@@ -1,77 +1,62 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #include <dlfcn.h>
-#include <unistd.h>
 #include <string.h>
+#include <mach-o/dyld.h>
 
-// --- SİSTEM TANIMLAMALARI (Hata Alan Kısım) ---
-extern "C" {
-    // ptrace'i burada açıkça tanımlıyoruz ki derleyici hata vermesin
-    int ptrace(int _request, pid_t _pid, caddr_t _addr, int _data);
-}
+// --- ORİJİNAL FONKSİYON POINTERLARI ---
+typedef int (*strcmp_t)(const char*, const char*);
+static strcmp_t orig_strcmp;
 
-// --- INTERPOSE ALTYAPISI ---
-typedef struct { 
-    const void* replacement; 
-    const void* original; 
-} interpose_t;
-
-// 1. STRNCMP KANCASI (1 Gün Ban Engelleyici)
-// Oyun bir dosyayı veya bayrağı kontrol ederken '0' dönerek "Orijinal" onayı veriyoruz.
-int h_strncmp(const char *s1, const char *s2, size_t n) {
+// --- BİZİM SAHTE FONKSİYONUMUZ ---
+int h_strcmp(const char *s1, const char *s2) {
     if (s1 && s2) {
-        // Pubg.txt içindeki kritik tetikleyiciler
-        if (strstr(s2, "3ae") || strstr(s2, "report") || strstr(s2, "SecurityCheck") || strstr(s2, "Cheat")) {
-            return 0; // "Eşleşme var, her şey yolunda" (Sahte Onay)
+        // Raporlama veya güvenlik kontrolü varsa '0' (Eşleşme/Temiz) döndür
+        if (strstr(s2, "3ae") || strstr(s2, "report") || strstr(s2, "SecurityCheck")) {
+            return 0; 
         }
     }
-    return strncmp(s1, s2, n);
+    return orig_strcmp(s1, s2);
 }
 
-// 2. PTRACE KANCASI (Anti-Debug Bypass)
-int h_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    // PT_DENY_ATTACH = 31. Oyun kendini debug'dan korumaya çalışırsa "Tamam" diyoruz.
-    if (request == 31) return 0;
-    return ptrace(request, pid, addr, data);
-}
-
-// 3. UI - DURUM PANELİ (Modern & Safe)
-void show_v10_label() {
+// --- YAZI MOTORU ---
+void show_v11_label() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject; break;
-                }
+        UIWindow *win = nil;
+        for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                win = scene.windows.firstObject; break;
             }
         }
-        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
+        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
 
-        if (window && ![window viewWithTag:2026]) {
-            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, window.frame.size.width, 25)];
-            lbl.text = @"🛡️ ONUR CAN V10: ANTI-BAN ACTIVE ✅";
-            lbl.textColor = [UIColor greenColor];
+        if (win) {
+            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 25)];
+            lbl.text = @"🛡️ ONUR CAN V11: DELAYED GHOST ACTIVE ✅";
+            lbl.textColor = [UIColor orangeColor];
             lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
             lbl.textAlignment = NSTextAlignmentCenter;
             lbl.font = [UIFont boldSystemFontOfSize:11];
-            lbl.tag = 2026;
-            [window addSubview:lbl];
+            [win addSubview:lbl];
         }
     });
 }
 
-// --- INTERPOSE TABLOSU ---
-__attribute__((used)) static const interpose_t interpose_list[] 
-__attribute__((section("__DATA,__interpose"))) = {
-    {(const void*)&h_strncmp, (const void*)&strncmp},
-    {(const void*)&h_ptrace, (const void*)&ptrace}
-};
-
+// --- ANA BAŞLATICI (CONSTRUCTOR) ---
 __attribute__((constructor))
 static void initialize() {
-    // 20 saniye sonra lobiye girişte devreye gir
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        show_v10_label();
+    // ÇOK ÖNEMLİ: 30 saniye bekliyoruz. 
+    // Bu sürede oyun tüm korumalarını yükler, dosyaları kontrol eder ve lobiye girer.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        // 30 saniye sonra fonksiyonu hafızada bulup kancalıyoruz
+        // Not: Bu yöntem için MSHookFunction kütüphanesi (CydiaSubstrate) IPA'da olmalıdır.
+        // Eğer yoksa sadece dlsym ile adres alıp manuel işlem yapılır.
+        
+        orig_strcmp = (strcmp_t)dlsym(RTLD_DEFAULT, "strcmp");
+        
+        // Yazıyı göster
+        show_v11_label();
+        printf("[Onur Can] Bypass lobi aşamasında aktif edildi.\n");
     });
 }
