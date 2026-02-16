@@ -2,57 +2,66 @@
 #import <Foundation/Foundation.h>
 #include <dlfcn.h>
 #include <unistd.h>
+#include <string.h>
 
-// --- INTERPOSE SİSTEMİ ---
-typedef struct { const void* replacement; const void* original; } interpose_t;
+// --- SİSTEM TANIMLAMALARI (Hata Alan Kısım) ---
+extern "C" {
+    // ptrace'i burada açıkça tanımlıyoruz ki derleyici hata vermesin
+    int ptrace(int _request, pid_t _pid, caddr_t _addr, int _data);
+}
 
-// 1. STRNCMP KANCASI (En Önemli Kısım)
-// strcmp yerine strncmp ve strstr kombinasyonu daha güvenlidir.
+// --- INTERPOSE ALTYAPISI ---
+typedef struct { 
+    const void* replacement; 
+    const void* original; 
+} interpose_t;
+
+// 1. STRNCMP KANCASI (1 Gün Ban Engelleyici)
+// Oyun bir dosyayı veya bayrağı kontrol ederken '0' dönerek "Orijinal" onayı veriyoruz.
 int h_strncmp(const char *s1, const char *s2, size_t n) {
     if (s1 && s2) {
-        // Eğer raporlama veya ban flag sorgusu gelirse
+        // Pubg.txt içindeki kritik tetikleyiciler
         if (strstr(s2, "3ae") || strstr(s2, "report") || strstr(s2, "SecurityCheck") || strstr(s2, "Cheat")) {
-            // 0 döndürerek oyunun "Hata yok, her şey orijinal" sanmasını sağlıyoruz.
-            return 0; 
+            return 0; // "Eşleşme var, her şey yolunda" (Sahte Onay)
         }
     }
     return strncmp(s1, s2, n);
 }
 
-// 2. GÜVENLİ PTRACE (Anti-Debug)
-typedef int (*ptrace_t)(int, pid_t, caddr_t, int);
+// 2. PTRACE KANCASI (Anti-Debug Bypass)
 int h_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    // PT_DENY_ATTACH (31) isteğini engelle, geri kalana dokunma
+    // PT_DENY_ATTACH = 31. Oyun kendini debug'dan korumaya çalışırsa "Tamam" diyoruz.
     if (request == 31) return 0;
-    return ((ptrace_t)dlsym(RTLD_DEFAULT, "ptrace"))(request, pid, addr, data);
+    return ptrace(request, pid, addr, data);
 }
 
-// 3. MODERN VE CRASH YAPMAYAN YAZI MOTORU
-void show_v9_label() {
+// 3. UI - DURUM PANELİ (Modern & Safe)
+void show_v10_label() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = nil;
-        // iOS 13+ için en güvenli pencere bulma yöntemi
-        for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                win = scene.windows.firstObject; break;
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    window = scene.windows.firstObject; break;
+                }
             }
         }
-        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
+        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
 
-        if (win && ![win viewWithTag:2026]) {
-            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 25)];
-            lbl.text = @"🛡️ ONUR CAN V9: STEALTH GHOST ✅";
+        if (window && ![window viewWithTag:2026]) {
+            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, window.frame.size.width, 25)];
+            lbl.text = @"🛡️ ONUR CAN V10: ANTI-BAN ACTIVE ✅";
             lbl.textColor = [UIColor greenColor];
             lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
             lbl.textAlignment = NSTextAlignmentCenter;
             lbl.font = [UIFont boldSystemFontOfSize:11];
             lbl.tag = 2026;
-            [win addSubview:lbl];
+            [window addSubview:lbl];
         }
     });
 }
 
-// --- INTERPOSE LİSTESİ ---
+// --- INTERPOSE TABLOSU ---
 __attribute__((used)) static const interpose_t interpose_list[] 
 __attribute__((section("__DATA,__interpose"))) = {
     {(const void*)&h_strncmp, (const void*)&strncmp},
@@ -60,10 +69,9 @@ __attribute__((section("__DATA,__interpose"))) = {
 };
 
 __attribute__((constructor))
-static void init() {
-    // Oyunun başlangıçtaki dosya kontrollerini (integrity) bozmamak için 
-    // Yazıyı lobiye girişte basıyoruz.
+static void initialize() {
+    // 20 saniye sonra lobiye girişte devreye gir
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        show_v9_label();
+        show_v10_label();
     });
 }
