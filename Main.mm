@@ -1,97 +1,156 @@
-#import <UIKit/UIKit.h>
+#import <substrate.h>
 #import <mach-o/dyld.h>
-#include <dlfcn.h>
-#include <pthread.h>
-#include <unistd.h>
-#include <time.h>
-#include <sys/time.h>
+#import <dlfcn.h>
+#import <string.h>
+#import <sys/time.h>
+#import <time.h>
 
-// --- POINTERLAR (Senin Ofsetlerin İçin) ---
-static void (*orig_AnoSDKDel3)(void *arg);
-static void *(*orig_AnoSDKGet3)(void);
-static void (*orig_sub_4A130)(void);
-static void *(*orig_memcpy_p)(void *dest, const void *src, size_t n);
-
-// --- HOOK FONKSİYONLARI (Senin Mantığın) ---
-void hook_AnoSDKDel3(void *arg) { return; }
-void *hook_AnoSDKGet3(void) { return NULL; }
-void hook_sub_4A130(void) { return; }
-
-void *h_memcpy(void *dest, const void *src, size_t n) {
-    if (src && n >= 13) {
-        if (memcmp(src, "cheat_open_id", 13) == 0) return dest;
-    }
-    return orig_memcpy_p ? orig_memcpy_p(dest, src, n) : memcpy(dest, src, n);
-}
-
-// --- GECİKMELİ KANCA MOTORU (Thread İçinde) ---
-void *deploy_precision_hooks(void *arg) {
-    // 1. KURAL: 25 Saniye Tam Uyku (Açılış Crash Engelleme)
-    sleep(25);
-
-    const char *targetLib = "anogs";
-    uintptr_t base = 0;
-
-    // anogs framework'ünü hafızada bul
+static uintptr_t getBaseAddress(const char *imageName) {
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *name = _dyld_get_image_name(i);
-        if (name && strstr(name, targetLib)) {
-            base = (uintptr_t)_dyld_get_image_header(i);
-            break;
+        if (name && strstr(name, imageName)) {
+            return (uintptr_t)_dyld_get_image_header(i);
         }
     }
+    return 0;
+}
 
-    if (base) {
-        // Kanka, Substrate olmadığı için ofsetleri dlsym veya direkt adresle kancalıyoruz
-        // Burada MSookFunction yerine alternatif bir Hook sistemi (örneğin Fishhook) 
-        // veya dlsym üzerinden ilerliyoruz.
-        
-        orig_memcpy_p = (void* (*)(void*, const void*, size_t))dlsym(RTLD_DEFAULT, "memcpy");
-        
-        // Senin Ofsetlerin:
-        // DelReportData3: base + 0xF117C
-        // GetReportData3: base + 0xF1178
-        // cheat_open_id:  base + 0x4A130
-        
-        printf("[Onur Can] Ofsetler başarıyla kancalandı. Lobi koruması aktif.\n");
-    }
+#pragma mark - AnoSDKDelReportData3 Hook (0xF117C / 0x2DCC8)
+
+static void (*orig_AnoSDKDelReportData3)(void *arg);
+static void hook_AnoSDKDelReportData3(void *arg) {
+    return;
+}
+
+#pragma mark - AnoSDKGetReportData3 Hook (0xF1178 / 0x2DC90)
+
+static void *(*orig_AnoSDKGetReportData3)(void);
+static void *hook_AnoSDKGetReportData3(void) {
     return NULL;
 }
 
-// --- UI GÖSTERGESİ ---
-void show_v16_label() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = nil;
-        for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive) {
-                win = scene.windows.firstObject; break;
-            }
-        }
-        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
+#pragma mark - AnoSDKDelReportData4 Hook (0xF1184 / 0x2DD98)
 
-        if (win) {
-            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 25)];
-            lbl.text = @"🛡️ ONUR CAN V16: PRECISION DELAY ACTIVE ✅";
-            lbl.textColor = [UIColor greenColor];
-            lbl.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-            lbl.textAlignment = NSTextAlignmentCenter;
-            lbl.font = [UIFont boldSystemFontOfSize:11];
-            [win addSubview:lbl];
-        }
-    });
+static void (*orig_AnoSDKDelReportData4)(void *arg);
+static void hook_AnoSDKDelReportData4(void *arg) {
+    return;
 }
 
-// --- CONSTRUCTOR (DYLIB YÜKLENDİĞİ AN) ---
-__attribute__((constructor))
-static void initialize() {
-    // Kanka kod şu an hafızaya girdi (Constructor aşaması)
-    // Ama oyunun akışını bozmamak için kancaları arka planda bekletiyoruz.
-    
-    pthread_t t;
-    pthread_create(&t, NULL, deploy_precision_hooks, NULL);
+#pragma mark - AnoSDKGetReportData4 Hook (0xF1180 / 0x2DD5C)
 
-    // 30 saniye sonra lobiye girdiğinde ekrana yazıyı bas
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        show_v16_label();
-    });
+static void *(*orig_AnoSDKGetReportData4)(int arg);
+static void *hook_AnoSDKGetReportData4(int arg) {
+    return NULL;
+}
+
+#pragma mark - cheat_open_id reporter (sub_4A130)
+
+static void (*orig_sub_4A130)(void);
+static void hook_sub_4A130(void) {
+    return;
+}
+
+#pragma mark - gmtime Hook
+
+static struct tm *(*orig_gmtime)(const time_t *timep);
+static struct tm fake_tm;
+static struct tm *hook_gmtime(const time_t *timep) {
+    struct tm *result = orig_gmtime(timep);
+    if (!result) {
+        memset(&fake_tm, 0, sizeof(fake_tm));
+        return &fake_tm;
+    }
+    return result;
+}
+
+#pragma mark - gettimeofday Hook
+
+static int (*orig_gettimeofday)(struct timeval *tv, void *tz);
+static int hook_gettimeofday(struct timeval *tv, void *tz) {
+    return orig_gettimeofday(tv, tz);
+}
+
+#pragma mark - clock_gettime Hook
+
+static int (*orig_clock_gettime)(clockid_t clk_id, struct timespec *tp);
+static int hook_clock_gettime(clockid_t clk_id, struct timespec *tp) {
+    return orig_clock_gettime(clk_id, tp);
+}
+
+#pragma mark - memcpy Hook
+
+static void *(*orig_memcpy)(void *dest, const void *src, size_t n);
+static void *hook_memcpy(void *dest, const void *src, size_t n) {
+    if (src && n >= 13) {
+        const char *s = (const char *)src;
+        if (memcmp(s, "cheat_open_id", 13) == 0) {
+            return dest;
+        }
+    }
+    return orig_memcpy(dest, src, n);
+}
+
+#pragma mark - sub_E6FDC (gmtime timestamp converter for ban)
+
+static void (*orig_sub_E6FDC)(void *arg0, void *arg1, void *arg2);
+static void hook_sub_E6FDC(void *arg0, void *arg1, void *arg2) {
+    return;
+}
+
+#pragma mark - Constructor
+
+%ctor {
+    @autoreleasepool {
+        const char *targetLib = "anogs";
+        uintptr_t base = 0;
+
+        for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+            const char *name = _dyld_get_image_name(i);
+            if (name && strstr(name, targetLib)) {
+                base = (uintptr_t)_dyld_get_image_header(i);
+                break;
+            }
+        }
+
+        if (!base) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+                    const char *name = _dyld_get_image_name(i);
+                    if (name && strstr(name, targetLib)) {
+                        uintptr_t b = (uintptr_t)_dyld_get_image_header(i);
+                        if (b) {
+                            MSHookFunction((void *)(b + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
+                            MSHookFunction((void *)(b + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
+                            MSHookFunction((void *)(b + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
+                            MSHookFunction((void *)(b + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
+                            MSHookFunction((void *)(b + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
+                            MSHookFunction((void *)(b + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
+                        }
+                        break;
+                    }
+                }
+            });
+            return;
+        }
+
+        MSHookFunction((void *)(base + 0xF117C), (void *)hook_AnoSDKDelReportData3, (void **)&orig_AnoSDKDelReportData3);
+
+        MSHookFunction((void *)(base + 0xF1178), (void *)hook_AnoSDKGetReportData3, (void **)&orig_AnoSDKGetReportData3);
+
+        MSHookFunction((void *)(base + 0xF1184), (void *)hook_AnoSDKDelReportData4, (void **)&orig_AnoSDKDelReportData4);
+
+        MSHookFunction((void *)(base + 0xF1180), (void *)hook_AnoSDKGetReportData4, (void **)&orig_AnoSDKGetReportData4);
+
+        MSHookFunction((void *)(base + 0x4A130), (void *)hook_sub_4A130, (void **)&orig_sub_4A130);
+
+        MSHookFunction((void *)(base + 0xE6FDC), (void *)hook_sub_E6FDC, (void **)&orig_sub_E6FDC);
+
+        MSHookFunction((void *)gettimeofday, (void *)hook_gettimeofday, (void **)&orig_gettimeofday);
+
+        MSHookFunction((void *)gmtime, (void *)hook_gmtime, (void **)&orig_gmtime);
+
+        MSHookFunction((void *)clock_gettime, (void *)hook_clock_gettime, (void **)&orig_clock_gettime);
+
+        MSHookFunction((void *)memcpy, (void *)hook_memcpy, (void **)&orig_memcpy);
+    }
 }
