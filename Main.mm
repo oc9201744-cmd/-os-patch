@@ -13,80 +13,77 @@ typedef struct interpose_substitution {
     __attribute__((used)) static const interpose_substitution_t interpose_##replacement \
     __attribute__((section("__DATA,__interpose"))) = { (const void*)(unsigned long)&replacement, (const void*)(unsigned long)&original }
 
-// 1. DOSYA YÖNLENDİRME (ShadowTracker.bin Olayı)
-// Orijinal dosya açılmak istendiğinde senin .bin dosyana yönlendirir.
-extern "C" int open(const char *path, int oflag, ...);
+// --- C-STYLE FUNCTION PROTOTYPES ---
+extern "C" {
+    int open(const char *path, int oflag, ...);
+    char* strstr(const char *haystack, const char *needle);
+}
+
+// 1. DOSYA YÖNLENDİRME (ShadowTracker.bin)
+// Orijinal dosya açıldığında bizim .bin dosyamızı devreye sokar.
 int h_open(const char *path, int oflag, mode_t mode) {
     if (path != NULL && strstr(path, "ShadowTrackerExtra")) {
+        // ShadowTracker.bin dosyasını Resource içinde ara
         NSString *binPath = [[NSBundle mainBundle] pathForResource:@"ShadowTracker" ofType:@"bin"];
-        if (binPath) return open([binPath UTF8String], oflag, mode);
+        if (binPath) {
+            return open([binPath UTF8String], oflag, mode);
+        }
     }
     return open(path, oflag, mode);
 }
 INTERPOSE_FUNCTION(h_open, open);
 
-// 2. STRSTR BYPASS (Derleme Hatası Giderilmiş Sürüm)
-// Derleyici hatasını önlemek için tam imza kullanıyoruz.
-extern "C" char* strstr(const char *haystack, const char *needle);
+// 2. STRSTR BYPASS (Hatasız Sürüm)
+// Derleyicinin "const" hatası vermemesi için (char*) cast ekledim.
 char* h_strstr(const char *haystack, const char *needle) {
     if (needle != NULL) {
         if (strcmp(needle, "3ae") == 0 || strcmp(needle, "shell") == 0 || 
             strcmp(needle, "tdm") || strcmp(needle, "Anogs") || strcmp(needle, "report") == 0) {
-            return NULL; // Güvenlik taramasını "bulunamadı" diyerek geçer.
+            return NULL; 
         }
     }
-    return strstr(haystack, needle);
+    // Orijinal strstr'yi çağır ve tipi zorla (cast)
+    return (char*)strstr(haystack, needle);
 }
 INTERPOSE_FUNCTION(h_strstr, strstr);
 
-// 3. ANOGS RAPOR SUSTURUCU (Kingmod Stili)
-// Dışarıdan gelen rapor fonksiyonlarını yakalıyoruz.
-extern "C" {
-    void* _AnoSDKGetReportData(void* a1, void* a2);
-}
-void* h_AnoSDKGetReportData(void* a1, void* a2) {
-    return NULL; 
-}
-// Not: Eğer linker hata verirse burayı dlsym ile değiştirebiliriz.
-// INTERPOSE_FUNCTION(h_AnoSDKGetReportData, _AnoSDKGetReportData);
-
-// --- UI MOTORU ---
-void start_ui_loop() {
+// --- UI MOTORU (MODERN SCENE UYUMLU) ---
+void display_secure_ui() {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = nil;
+        UIWindow *activeWindow = nil;
         if (@available(iOS 13.0, *)) {
             for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
                 if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    win = scene.windows.firstObject; break;
+                    activeWindow = scene.windows.firstObject;
+                    break;
                 }
             }
         }
-        if (!win) {
+        if (!activeWindow) {
             #pragma clang diagnostic push
             #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-            win = [UIApplication sharedApplication].keyWindow;
+            activeWindow = [UIApplication sharedApplication].keyWindow;
             #pragma clang diagnostic pop
         }
 
-        if (win && ![win viewWithTag:1907]) {
-            UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, win.frame.size.width, 30)];
-            l.text = @"🛡️ ONUR CAN PRO BYPASS ACTIVE ✅";
-            l.textColor = [UIColor cyanColor];
-            l.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-            l.textAlignment = NSTextAlignmentCenter;
-            l.font = [UIFont boldSystemFontOfSize:11];
-            l.tag = 1907;
-            [win addSubview:l];
+        if (activeWindow && ![activeWindow viewWithTag:1907]) {
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 45, activeWindow.frame.size.width, 30)];
+            label.text = @"🛡️ ONUR CAN PRO BYPASS ACTIVE ✅";
+            label.textColor = [UIColor cyanColor];
+            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+            label.textAlignment = NSTextAlignmentCenter;
+            label.font = [UIFont boldSystemFontOfSize:11];
+            label.tag = 1907;
+            label.layer.zPosition = 99999;
+            [activeWindow addSubview:label];
         }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            start_ui_loop();
-        });
     });
 }
 
 __attribute__((constructor))
-static void init() {
+static void initialize() {
+    // 15 saniye sonra lobiye girişte yazıyı bas
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        start_ui_loop();
+        display_secure_ui();
     });
 }
