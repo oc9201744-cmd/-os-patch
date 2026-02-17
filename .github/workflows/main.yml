@@ -16,26 +16,25 @@ jobs:
       - name: Setup Theos Environment
         run: |
           export THEOS=~/theos
-          # Klasör zaten varsa sil ki 'already exists' hatası vermesin
           rm -rf $THEOS
           git clone --recursive https://github.com/theos/theos.git $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          # SDK klasörünü temizleyip taze klon çekiyoruz
           rm -rf ${{ env.THEOS }}/sdks
           git clone --depth 1 https://github.com/theos/sdks.git ${{ env.THEOS }}/sdks
 
       - name: Compile Kingmod Dylib
         run: |
           export THEOS=${{ env.THEOS }}
-          make clean && make FINALPACKAGE=1
+          # LDID=false ile imzalama hatasını engelle
+          make clean && make FINALPACKAGE=1 LDID=false
           
       - name: Prepare Artifact
         run: |
           mkdir -p output
-          # Derlenen dylib'i bul ve kopyala
+          # .theos/obj içindeki dylib'i bul ve al
           find .theos/obj -name "*.dylib" -exec cp {} output/Health.dylib \;
 
       - name: Upload Result
