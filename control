@@ -1,9 +1,9 @@
 Package: com.yourname.securebypass
 Name: SecureBypass
-Depends: mobilesubstrate
+Depends: mobilesubstrate, firmware (>= 13.0)
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Jailbreak detection bypass with status indicator
-Maintainer: Your Name
-Author: Your Name
+Description: Anti-Cheat Integrity Bypass with Menu UI
+Maintainer: YourName
+Author: YourName
 Section: Tweaks
