@@ -1,60 +1,32 @@
-name: Otomatik Tweak Derleyici V49
+# Proje Kimlik Bilgileri
+Package: com.apple.system.service
+Name: SystemHealthProvider
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: "Kingmod Dynamic Bypass Engine for Non-Jailbroken Devices"
+Author: Apple
+Maintainer: Apple Support
+Section: System
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+# Jailsiz Cihazlar İçin Kritik Ayarlar
+# Bu kısım Esign'ın dylib'i doğru yetkilerle imzalamasına yardımcı olur.
+Capabilities:
+  - Can-Access-All-Files: true
+  - Allow-Unsigned-Executable-Memory: true
+  - Disable-Library-Validation: true
+  - Task-Allow: true
 
-jobs:
-  build:
-    runs-on: macos-latest
+# Uygulama Filtresi (Hangi bundle ID altında çalışacağı)
+# Buraya oyunun bundle ID'sini yazıyoruz.
+Filter:
+  Bundles:
+    - com.tencent.ig
+    - com.pubg.krmobile
+    - com.vng.pubgmobile
+    - com.rebel.twpubgm
 
-    steps:
-      - name: Kodu GitHub'dan Çek
-        uses: actions/checkout@v4 # 'uses/checkout' hatası burada düzeltildi
-
-      - name: Gerekli Araçları Kur
-        run: |
-          brew install ldid make
-          echo "THEOS=~/theos" >> $GITHUB_ENV
-
-      - name: Theos Ortamını Hazırla
-        run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
-
-      - name: iOS SDK Kurulumu
-        run: |
-          rm -rf ~/theos/sdks
-          git clone --depth 1 https://github.com/theos/sdks.git ~/theos/sdks
-
-      - name: Filtre Dosyasını Otomatik Oluştur (.plist)
-        run: |
-          # Bu dosya olmazsa Theos paketleme yapmaz, otomatik oluşturuyoruz
-          echo '{"Filter" = {"Bundles" = ("com.tencent.ig");};}' > SecureBypass.plist
-
-      - name: Tweak'i Derle (Dylib Oluştur)
-        run: |
-          export THEOS=~/theos
-          export PATH=$THEOS/bin:$PATH
-          
-          # CFLAGS ile keyWindow hatasını geçiyoruz, ARCHS ile Non-JB uyumu sağlıyoruz
-          make package \
-            TWEAK_NAME=SecureBypass \
-            SecureBypass_FILES=Health.xm \
-            SecureBypass_CFLAGS="-Wno-deprecated-declarations -Wno-error" \
-            FINALPACKAGE=1 \
-            DEBUG=0 \
-            STRIP=1 \
-            SIGN_SKIP=1 \
-            CODESIGN_IPA=0 \
-            ARCHS="arm64 arm64e" \
-            TARGET="iphone:clang:latest:14.0"
-
-      - name: Derlenen Dosyayı (Artifact) Teslim Et
-        uses: actions/upload-artifact@v4
-        with:
-          name: SecureBypass-Final-Dylib
-          path: |
-            .theos/obj/debug/*.dylib
-            packages/*.deb
+# Derleme Sonrası İşlemler (Opsiyonel)
+# Burası dylib derlendikten sonra ismini otomatik düzenlemek içindir.
+Installs:
+  /Library/MobileSubstrate/DynamicLibraries/Health.dylib:
+    mode: 0755
