@@ -1,15 +1,16 @@
-# Dosya adın Tweak.mm olduğu için buraya tam yazıyoruz
-TWEAK_NAME = SecureBypass
-SecureBypass_FILES = Tweak.mm
-SecureBypass_FRAMEWORKS = UIKit Foundation AudioToolbox
-SecureBypass_LIBRARIES = substrate
+# Paralel derleme için (Hızlandırır)
+export MAKEFLAGS = -j$(shell nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-# Mimari ayarları (Non-JB için arm64 şart)
-ARCHS = arm64 arm64e
-TARGET = iphone:clang:latest:13.0
-
-# Derleme sırasında imzalama hatasını engelle
-export SIGN_SKIP = 1
+TARGET := iphone:clang:latest:13.0
+ARCHS = arm64
+DEBUG = 0
+FINALPACKAGE = 1
 
 include $(THEOS)/makefiles/common.mk
+
+TWEAK_NAME = SecureBypass
+# Dosya adını .xm yaptığına emin ol!
+SecureBypass_FILES = Tweak.xm
+SecureBypass_CFLAGS = -fobjc-arc
+
 include $(THEOS_MAKE_PATH)/tweak.mk
