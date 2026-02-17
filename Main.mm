@@ -1,71 +1,70 @@
 #import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#include <mach/mach.h>
 #include <mach-o/dyld.h>
 #include <dlfcn.h>
 
-// --- EKRENA YAZI BASMA FONKSİYONU ---
-void ShowGhostLabel() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = ((UIWindowScene*)scene).windows.firstObject;
-                    break;
-                }
-            }
-        }
-        if (!window) window = [UIApplication sharedApplication].keyWindow;
+// --- DOBBY HOOK TANIMI ---
+extern "C" int DobbyHook(void *function_address, void *replace_call, void **origin_call);
 
-        if (window) {
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, window.frame.size.width, 30)];
-            label.backgroundColor = [UIColor colorWithRed:0 green:0.6 blue:0 alpha:0.9];
-            label.textColor = [UIColor whiteColor];
-            label.textAlignment = NSTextAlignmentCenter;
-            label.text = @"V32: ANOGS KİLİTLENDİ ✅"; // Yazıyı buraya ekledik
-            label.font = [UIFont boldSystemFontOfSize:13];
-            [window addSubview:label];
-            printf("[Ghost] Yazı ekrana basıldı.\n");
-        }
-    });
+// --- RAPORLAMA OFSETLERİ (anogs Analiz Sonucu) ---
+#define OFFSET_DATA_COLLECTOR 0x2A1B40  // Veri toplama merkezi
+#define OFFSET_REPORT_SENDER  0x3BC120  // Sunucuya gönderim tetikleyici
+#define OFFSET_EVENT_LOG      0x192D54  // Olay günlükleri (Event Logs)
+#define OFFSET_QUERY_REPORT   0x405A10  // Sorgu bazlı raporlar
+
+// Orijinal fonksiyonları tutmak için boş pointerlar
+void* (*orig_DataCollector)(void*, int, void*, int);
+int (*orig_ReportSender)(void*, void*, int);
+void (*orig_EventLog)(int, const char*, ...);
+
+// --- 1. VERİ TOPLAYICIYI KÖR ET ---
+// Bu fonksiyon veri paketlemek istediğinde "hata oluştu" veya "veri yok" döndürüyoruz.
+void* my_DataCollector(void* arg0, int type, void* buffer, int size) {
+    // printf("[Silence] Veri toplama girişimi engellendi. Tip: %d\n", type);
+    return NULL; // Hiçbir veri döndürme
 }
 
-// --- ANOGS YAZMA İZİNLERİNİ KAPATMA ---
-void Lock_AnoSDK_Memory() {
+// --- 2. GÖNDERİCİYİ SUSTUR ---
+// Sunucuya paket göndermeye çalışan fonksiyonu kandırıyoruz.
+int my_ReportSender(void* arg0, void* packet, int len) {
+    // printf("[Silence] Paket gönderimi simüle edildi (aslında gitmedi).\n");
+    return 0; // 0 döndürerek gönderim başarılıymış gibi oyunu kandırıyoruz
+}
+
+// --- 3. LOGLARI SİL ---
+// Anti-cheat'in kendi tuttuğu günlükleri (logs) yazmasını engelliyoruz.
+void my_EventLog(int level, const char* fmt, ...) {
+    // Hiçbir şey yapma, log yazma.
+    return;
+}
+
+// --- TÜMÜNÜ DEVRE DIŞI BIRAKAN ANA FONKSİYON ---
+void Disable_All_Reports() {
+    uintptr_t base = 0;
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char* name = _dyld_get_image_name(i);
-        
-        if (strstr(name, "anogs")) {
-            uintptr_t base_addr = _dyld_get_image_vmaddr_slide(i) + 0x100000000;
-            
-            // Basitçe ilk 0x200000 byte'lık (veya kütüphane boyutu kadar) alanı korumaya alalım
-            // VM_PROT_READ: Sadece okuma, VM_PROT_NONE: Yazma ve Yürütme kapalı
-            kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)base_addr, 0x200000, FALSE, VM_PROT_READ);
-            
-            if (kr == KERN_SUCCESS) {
-                printf("[Ghost] anogs yazma izinleri başarıyla kapatıldı! \n");
-            } else {
-                printf("[Ghost] Yazma izinleri kapatılamadı, hata kodu: %d\n", kr);
-            }
+        if (strstr(_dyld_get_image_name(i), "anogs")) {
+            base = _dyld_get_image_vmaddr_slide(i) + 0x100000000;
             break;
         }
     }
+
+    if (base > 0) {
+        // Hepsini tek tek kancalıyoruz
+        DobbyHook((void*)(base + OFFSET_DATA_COLLECTOR), (void*)my_DataCollector, (void**)&orig_DataCollector);
+        DobbyHook((void*)(base + OFFSET_REPORT_SENDER), (void*)my_ReportSender, (void**)&orig_ReportSender);
+        DobbyHook((void*)(base + OFFSET_EVENT_LOG), (void*)my_EventLog, (void**)&orig_EventLog);
+        DobbyHook((void*)(base + OFFSET_QUERY_REPORT), (void*)my_DataCollector, NULL); // Aynı sahte dönütü ver
+
+        printf("🤐 [V36] TÜM RAPORLAMALAR SUSTURULDU. OYUN ŞU AN SAĞIR!\n");
+    }
 }
 
-// --- ANA GİRİŞ ---
 __attribute__((constructor))
-static void initialize_v32() {
-    printf("[Ghost] V32 Dylib yüklendi, geri sayım başladı...\n");
-
-    // 15. Saniyede hem yazıyı bas hem de izinleri kapat
+static void v36_init() {
+    // 15. saniyede her şeyi kilitle
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        Disable_All_Reports();
         
-        // 1. Yazma izinlerini kapat (Bypass işlemi)
-        Lock_AnoSDK_Memory();
-        
-        // 2. Ekrana "AKTİF OLDU" yazısını bas
-        ShowGhostLabel();
-        
+        // Onay için kısa bir titreşim
+        AudioServicesPlaySystemSound(1519); // Peek vibration
     });
 }
