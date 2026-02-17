@@ -30,13 +30,29 @@ jobs:
             echo "SDKs already exist, skipping clone."
           fi
 
-      - name: Build Tweak (with explicit LDID path)
+      # Bu adım KALDIRILDI: PATH güncellemesi her zaman işe yaramayabiliyor.
+      # - name: Add Theos bin to PATH (for ldid)
+      #   run: echo "$THEOS/bin" >> $GITHUB_PATH
+
+      # YENİ ADIM: ldid'in varlığını kontrol et ve yoksa Theos'tan sembolik link oluştur.
+      - name: Ensure ldid is available in /usr/local/bin
+        run: |
+          if [ ! -f "/usr/local/bin/ldid" ]; then
+            echo "ldid not found in /usr/local/bin. Creating symlink from Theos..."
+            sudo ln -s $THEOS/bin/ldid /usr/local/bin/ldid
+          else
+            echo "ldid already exists in /usr/local/bin."
+          fi
+          # Kontrol: ldid çalışıyor mu?
+          ldid || echo "ldid command executed (or failed, but we proceed)."
+
+      - name: Build Tweak
         run: |
           cd $GITHUB_WORKSPACE
-          export ADDITIONAL_CFLAGS="-Wno-deprecated-declarations -Wno-varargs"
+          # Deprecated uyarılarını hata sayma (derleme başarılı olsun)
+          export ADDITIONAL_CFLAGS="-Wno-deprecated-declarations"
           make clean
-          # LDID değişkenini doğrudan Theos'un bin/ldid yoluna ayarla
-          make package LDID=$THEOS/bin/ldid
+          make package
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
