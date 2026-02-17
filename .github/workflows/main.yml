@@ -1,4 +1,4 @@
-name: Otomatik Tweak Derleyici V48
+name: Otomatik Tweak Derleyici V49
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Kodu GitHub'dan Çek
-        uses: uses/checkout@v4
+        uses: actions/checkout@v4 # 'uses/checkout' hatası burada düzeltildi
 
       - name: Gerekli Araçları Kur
         run: |
@@ -30,15 +30,15 @@ jobs:
 
       - name: Filtre Dosyasını Otomatik Oluştur (.plist)
         run: |
-          # Theos'un hata verdiği eksik dosyayı burada oluşturuyoruz
-          echo '{"Filter = {Bundles = ("com.tencent.ig");};}' > SecureBypass.plist
+          # Bu dosya olmazsa Theos paketleme yapmaz, otomatik oluşturuyoruz
+          echo '{"Filter" = {"Bundles" = ("com.tencent.ig");};}' > SecureBypass.plist
 
       - name: Tweak'i Derle (Dylib Oluştur)
         run: |
           export THEOS=~/theos
           export PATH=$THEOS/bin:$PATH
           
-          # Hataları susturup derlemeyi bitiriyoruz
+          # CFLAGS ile keyWindow hatasını geçiyoruz, ARCHS ile Non-JB uyumu sağlıyoruz
           make package \
             TWEAK_NAME=SecureBypass \
             SecureBypass_FILES=Tweak.mm \
@@ -54,7 +54,7 @@ jobs:
       - name: Derlenen Dosyayı (Artifact) Teslim Et
         uses: actions/upload-artifact@v4
         with:
-          name: SecureBypass-V48-Final
+          name: SecureBypass-Final-Dylib
           path: |
             .theos/obj/debug/*.dylib
             packages/*.deb
