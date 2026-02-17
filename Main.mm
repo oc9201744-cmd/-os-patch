@@ -1,70 +1,86 @@
 #import <Foundation/Foundation.h>
-#import <mach/mach.h>
-#import <mach/thread_status.h>
-#import <mach-o/dyld.h>
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include <vector>
 
-// --- HARDWARE BREAKPOINT ENGINE ---
-
-// Bu yapı, ARM64 işlemcinin içine gizlice girip fonksiyonu yönlendirir.
-static void* target_addr = NULL;
-
-// Hata yakalayıcı: İşlemci hedef fonksiyona geldiğinde burası tetiklenir.
-void handle_exception(int sig) {
-    // Bu kısım çok teknik: İşlemcinin o anki PC (Program Counter) değerini değiştiriyoruz.
-    // Fonksiyonun içine girmeden, doğrudan 'return' (ret) komutuna atlatıyoruz.
-    // Böylece kod asla çalışmıyor ama kodda tek bir bayt bile değişmemiş oluyor.
-    printf("[🛡️] V23: Fonksiyon çağrısı havada yakalandı ve engellendi!\n");
+// --- ADAMIN VERDİĞİ ALGORİTMA (Tamamlanmış Hali) ---
+// Bu algoritma AnoSDK'nın parmak izi hesaplayıcısıdır.
+uint32_t Calculate_Integrity_Hash(const void* Source, size_t Size) {
+    const unsigned char* data = static_cast<const unsigned char*>(Source);
+    uint32_t state = 0;
+    uint32_t mix = 0;
+    for (size_t i = 0; i < Size; ++i) {
+        if (i & 1)
+            mix = ~((state << 11) ^ data[i] ^ (state >> 5));
+        else
+            mix = (state << 7) ^ data[i] ^ (state >> 3);
+        state ^= mix;
+    }
+    uint32_t uresult = state & 0x7FFFFFFF;
+    const uint32_t LIMIT = 0x8FFFFFFF;
+    if (uresult > LIMIT) uresult = LIMIT;
+    return uresult;
 }
 
-// İşlemci seviyesinde breakpoint koyan fonksiyon
-bool set_hw_breakpoint(void* addr) {
-    thread_act_t thread = mach_thread_self();
-    arm_debug_state64_t state;
-    mach_msg_type_number_t count = ARM_DEBUG_STATE64_COUNT;
+// --- CLOAKING (GİZLEME) SİSTEMİ ---
+struct PatchedRegion {
+    uintptr_t start_addr;
+    size_t size;
+    uint8_t* original_backup; // Orijinal (temiz) verinin kopyası
+};
 
-    // Mevcut debug durumunu al
-    if (thread_get_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&state, &count) != KERN_SUCCESS) return false;
+std::vector<PatchedRegion> g_patched_regions;
 
-    // DR0 kayıtçısına adresi yaz (İşlemciye "burada dur" diyoruz)
-    state.__bvr[0] = (uint64_t)addr;
-    state.__bcr[0] = 0x1E5; // Enable, load/store, all sizes
+// Orijinal fonksiyonu tutan pointer
+int (*oMemCp1)(const void* Source, size_t Size);
 
-    // Yeni durumu işlemciye yükle
-    return thread_set_state(thread, ARM_DEBUG_STATE64, (thread_state_t)&state, count) == KERN_SUCCESS;
-}
+// --- ASIL BYPASS: HOOK FONKSİYONU ---
+int hMemCp1_Proxy(const void* Source, size_t Size) {
+    uintptr_t current_scan_addr = (uintptr_t)Source;
 
-// --- UI ---
-void show_v23_label() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = [UIApplication sharedApplication].windows.firstObject;
-        if (win) {
-            UILabel *lbl = [[UILabel alloc] initWithFrame:CGRectMake(0, 40, win.frame.size.width, 15)];
-            lbl.text = @"🛡️ V23: ZERO-WRITE HARDWARE BYPASS ✅";
-            lbl.textColor = [UIColor greenColor];
-            lbl.textAlignment = NSTextAlignmentCenter;
-            lbl.font = [UIFont boldSystemFontOfSize:9];
-            [win addSubview:lbl];
+    // Oyun şu an bizim hile yaptığımız bir yeri mi tarıyor?
+    for (const auto& region : g_patched_regions) {
+        if (current_scan_addr >= region.start_addr && 
+            current_scan_addr < (region.start_addr + region.size)) {
+            
+            // YAKALADIK! Oyun hileli bölgeyi taramaya çalışıyor.
+            // Ona hileli hafızayı değil, orijinal yedeğimizi tarattırıyoruz.
+            return (int)Calculate_Integrity_Hash(region.original_backup, Size);
         }
-    });
+    }
+
+    // Eğer hileli bir yer değilse, normal taramaya devam et (Veya orijinali çağır)
+    return (int)Calculate_Integrity_Hash(Source, Size);
 }
 
-// --- BAŞLATICI ---
+// --- KURULUM (Tamamla) ---
+void Add_Patch_To_Cloak(uintptr_t addr, size_t size) {
+    PatchedRegion region;
+    region.start_addr = addr;
+    region.size = size;
+    region.original_backup = (uint8_t*)malloc(size);
+    memcpy(region.original_backup, (void*)addr, size); // Yama atmadan ÖNCE yedeği al
+    g_patched_regions.push_back(region);
+}
+
 __attribute__((constructor))
-static void initialize_v23() {
-    // 60 saniye bekle (Oyunun tüm başlangıç bütünlük kontrolleri tamamen bitsin)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+static void initialize_v27() {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         void* handle = dlopen("anogs", RTLD_NOW);
         if (handle) {
-            target_addr = dlsym(handle, "AnoSDKGetReportData");
+            // BURASI ÖNEMLİ: anogs.txt içinde "0x7FFFFFFF" sabitini kullanan 
+            // o fonksiyonun offsetini bulmalısın. Genelde sub_XXXXX şeklindedir.
+            // Örnek: void* target_func = (void*)((uintptr_t)handle + 0x123456); 
             
-            if (target_addr) {
-                // DONANIM SEVİYESİNDE DURDURMA KOY
-                // Bu işlem hafızada tek bir baytı bile değiştirmez!
-                if (set_hw_breakpoint(target_addr)) {
-                    show_v23_label();
-                }
+            void* target_func = dlsym(handle, "AnoSDK_Integrity_Check"); // İsmini buradan bul
+            
+            if (target_func) {
+                // Hile yapacağın yerleri buraya ekle (Örn: 0x100400000 adresine 4 byte yama)
+                // Add_Patch_To_Cloak(0x100400000, 4); 
+                
+                // Ve fonksiyonu kancala
+                // MSHookFunction(target_func, (void*)hMemCp1_Proxy, (void**)&oMemCp1);
             }
         }
     });
