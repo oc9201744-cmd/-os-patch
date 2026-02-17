@@ -5,24 +5,30 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # manuel çalıştırma
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest   # macOS runner (TheOS için gerekli)
-    
+    runs-on: macos-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install Theos
         run: |
-          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          if [ ! -d "$HOME/theos" ]; then
+            git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          fi
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
-      - name: Install iOS SDKs
+      - name: Ensure iOS SDKs are present
         run: |
-          git clone https://github.com/theos/sdks.git $HOME/theos/sdks
+          if [ ! -d "$HOME/theos/sdks" ] || [ -z "$(ls -A $HOME/theos/sdks)" ]; then
+            git clone https://github.com/theos/sdks.git $HOME/theos/sdks
+          else
+            echo "SDKs already exist, skipping clone."
+          fi
 
       - name: Build Tweak
         run: |
