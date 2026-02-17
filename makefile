@@ -1,14 +1,9 @@
-TARGET := iphone:clang:latest:14.0
-INSTALL_TARGET_PROCESSES = SpringBoard
+# İmzalama hatasını (ldid) atlatmak için:
+export SIGN_SKIP = 1
 
-include $(THEOS)/makefiles/common.mk
+# Substrate kütüphanesini ve frameworkleri tanıtmak için:
+SecureBypass_FRAMEWORKS = UIKit Foundation AudioToolbox
+SecureBypass_LIBRARIES = substrate
 
-TWEAK_NAME = SecureBypass
-SecureBypass_FILES = Tweak.mm
-SecureBypass_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
-SecureBypass_FRAMEWORKS = UIKit Foundation
-
-include $(THEOS_MAKE_PATH)/tweak.mk
-
-after-install::
-	install.exec "killall -9 SpringBoard"
+# Eğer hala 'ldid' hatası alırsan şu satırı da ekle:
+export CODESIGN_IPA = 0
