@@ -7,6 +7,9 @@
 #import <mach-o/dyld.h>
 #import <stdarg.h>
 
+// Derleyicinin "keyWindow" uyarısını sustur
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+
 // MARK: - Loglama
 #ifdef DEBUG
 #define BypassLog(fmt, ...) NSLog(@"[Bypass] " fmt, ##__VA_ARGS__)
@@ -62,10 +65,10 @@ static BypassStatusView *sharedInstance = nil;
     self.messageLabel.text = message;
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *keyWindow = nil;
+        
+        // HATA DÜZELTME: iOS 13+ ve altı için güvenli pencere bulma
         if (@available(iOS 13.0, *)) {
-            // iOS 13+ için modern pencere bulma yöntemi
-            NSSet<UIScene *> *connectedScenes = [UIApplication sharedApplication].connectedScenes;
-            for (UIScene *scene in connectedScenes) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
                 if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
                     UIWindowScene *windowScene = (UIWindowScene *)scene;
                     for (UIWindow *window in windowScene.windows) {
@@ -76,8 +79,10 @@ static BypassStatusView *sharedInstance = nil;
                     }
                 }
             }
-        } else {
-            // iOS 12 ve öncesi (fallback)
+        }
+        
+        // Eğer hala bulunamadıysa (Legacy Fallback)
+        if (!keyWindow) {
             keyWindow = [UIApplication sharedApplication].keyWindow;
         }
         
@@ -91,7 +96,6 @@ static BypassStatusView *sharedInstance = nil;
         }
     });
     
-    // 7 saniye sonra otomatik gizle
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 7 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
         [self hide];
     });
@@ -107,129 +111,66 @@ static BypassStatusView *sharedInstance = nil;
 
 @end
 
-// MARK: - Hook'lanacak Fonksiyonların Original Pointer'ları
+// MARK: - Hook Pointerları
 static int (*orig_stat)(const char *path, struct stat *buf);
 static int (*orig_open)(const char *path, int oflag, ...);
 static FILE* (*orig_fopen)(const char *path, const char *mode);
 static int (*orig_access)(const char *path, int amode);
 static int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 
-// MARK: - Engellenecek Jailbreak Dosya Yolları
+// MARK: - JB Yolları
 static const char *jailbreak_paths[] = {
-    "/Applications/Cydia.app",
-    "/Applications/FakeCarrier.app",
-    "/Applications/Icy.app",
-    "/Applications/IntelliScreen.app",
-    "/Applications/MxTube.app",
-    "/Applications/RockApp.app",
-    "/Applications/SBSettings.app",
-    "/Applications/Snoop-itConfig.app",
-    "/Applications/WinterBoard.app",
-    "/Applications/blackra1n.app",
-    "/Library/MobileSubstrate/DynamicLibraries",
-    "/Library/MobileSubstrate/MobileSubstrate.dylib",
-    "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
-    "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
-    "/bin/bash",
-    "/bin/sh",
-    "/etc/apt",
-    "/etc/ssh/sshd_config",
-    "/private/var/lib/apt",
-    "/private/var/lib/cydia",
-    "/private/var/mobile/Library/SBSettings",
-    "/private/var/stash",
-    "/private/var/tmp/cydia.log",
-    "/usr/bin/sshd",
-    "/usr/libexec/sftp-server",
-    "/usr/libexec/ssh-keysign",
-    "/usr/sbin/sshd",
-    "/var/cache/apt",
-    "/var/lib/apt",
-    "/var/lib/cydia",
-    "/var/log/syslog",
-    "/var/tmp/cydia.log",
-    NULL
+    "/Applications/Cydia.app", "/Library/MobileSubstrate/MobileSubstrate.dylib", "/bin/bash", "/usr/sbin/sshd", "/etc/apt", NULL
 };
 
-// MARK: - Yardımcı Fonksiyon: Verilen yol jailbreak yolu mu?
 static int is_jailbreak_path(const char *path) {
     if (!path) return 0;
     for (int i = 0; jailbreak_paths[i] != NULL; i++) {
-        if (strcmp(path, jailbreak_paths[i]) == 0) {
-            return 1;
-        }
+        if (strcmp(path, jailbreak_paths[i]) == 0) return 1;
     }
     return 0;
 }
 
-// MARK: - Hook'lar
+// MARK: - Replaced Hooks
 int replaced_stat(const char *path, struct stat *buf) {
-    if (is_jailbreak_path(path)) {
-        BypassLog(@"stat engellendi: %s", path);
-        errno = ENOENT;
-        return -1;
-    }
+    if (is_jailbreak_path(path)) { errno = ENOENT; return -1; }
     return orig_stat(path, buf);
 }
 
 int replaced_open(const char *path, int oflag, ...) {
-    if (is_jailbreak_path(path)) {
-        BypassLog(@"open engellendi: %s", path);
-        errno = ENOENT;
-        return -1;
-    }
-    va_list args;
-    va_start(args, oflag);
-    // mode_t unsigned short olduğu için önce int olarak alıp cast ediyoruz
-    int mode_int = va_arg(args, int);
-    mode_t mode = (mode_t)mode_int;
+    if (is_jailbreak_path(path)) { errno = ENOENT; return -1; }
+    va_list args; va_start(args, oflag);
+    mode_t mode = (mode_t)va_arg(args, int);
     va_end(args);
     return orig_open(path, oflag, mode);
 }
 
 FILE* replaced_fopen(const char *path, const char *mode) {
-    if (is_jailbreak_path(path)) {
-        BypassLog(@"fopen engellendi: %s", path);
-        errno = ENOENT;
-        return NULL;
-    }
+    if (is_jailbreak_path(path)) { errno = ENOENT; return NULL; }
     return orig_fopen(path, mode);
 }
 
 int replaced_access(const char *path, int amode) {
-    if (is_jailbreak_path(path)) {
-        BypassLog(@"access engellendi: %s", path);
-        errno = ENOENT;
-        return -1;
-    }
+    if (is_jailbreak_path(path)) { errno = ENOENT; return -1; }
     return orig_access(path, amode);
 }
 
 int replaced_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID) {
-        BypassLog(@"sysctl KERN_PROC_PID çağrıldı");
-    }
     return orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
 }
 
-// MARK: - Constructor
+// MARK: - Main
 __attribute__((constructor))
 static void initialize() {
     @autoreleasepool {
-        BypassLog(@"Bypass kütüphanesi yükleniyor...");
-        
-        // Hook'ları kur
         MSHookFunction((void *)stat, (void *)replaced_stat, (void **)&orig_stat);
         MSHookFunction((void *)open, (void *)replaced_open, (void **)&orig_open);
         MSHookFunction((void *)fopen, (void *)replaced_fopen, (void **)&orig_fopen);
         MSHookFunction((void *)access, (void *)replaced_access, (void **)&orig_access);
         MSHookFunction((void *)sysctl, (void *)replaced_sysctl, (void **)&orig_sysctl);
         
-        BypassLog(@"Hook'lar başarıyla kuruldu.");
-        
-        // Bypass aktif mesajını göster (biraz gecikmeli)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nJailbreak Tespitleri Engellendi"];
+            [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nTespitler Engellendi"];
         });
     }
 }
