@@ -4,6 +4,7 @@
 #import <dlfcn.h>
 #import <sys/stat.h>
 #import <sys/sysctl.h>
+#import <sys/ptrace.h>      // ptrace için eklendi
 #import <mach-o/dyld.h>
 
 // MARK: - Loglama
@@ -146,13 +147,12 @@ static int is_jailbreak_path(const char *path) {
         if (strcmp(path, jailbreak_paths[i]) == 0) {
             return 1;
         }
-        // Bazı uygulamalar dizin kontrolü yapabilir, alt dizinleri de engellemek isterseniz strstr kullanın.
-        // if (strstr(path, jailbreak_paths[i]) == path) return 1;
     }
     return 0;
 }
 
-// MARK: - Hook'lar
+// MARK: - Hook'lar (Düzeltilmiş)
+
 int replaced_stat(const char *path, struct stat *buf) {
     if (is_jailbreak_path(path)) {
         BypassLog(@"stat engellendi: %s", path);
@@ -162,6 +162,7 @@ int replaced_stat(const char *path, struct stat *buf) {
     return orig_stat(path, buf);
 }
 
+// DÜZELTİLDİ: va_arg int olarak alınıp mode_t'a cast edildi
 int replaced_open(const char *path, int oflag, ...) {
     if (is_jailbreak_path(path)) {
         BypassLog(@"open engellendi: %s", path);
@@ -170,7 +171,8 @@ int replaced_open(const char *path, int oflag, ...) {
     }
     va_list args;
     va_start(args, oflag);
-    mode_t mode = va_arg(args, mode_t);
+    int mode_int = va_arg(args, int);          // int olarak al
+    mode_t mode = (mode_t)mode_int;            // mode_t'a cast et
     va_end(args);
     return orig_open(path, oflag, mode);
 }
@@ -193,23 +195,18 @@ int replaced_access(const char *path, int amode) {
     return orig_access(path, amode);
 }
 
+// ptrace için header eklendi, sorun kalmadı
 int replaced_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    // PT_DENY_ATTACH = 31
-    if (request == 31) {
+    if (request == 31) { // PT_DENY_ATTACH
         BypassLog(@"ptrace(PT_DENY_ATTACH) engellendi");
-        return 0; // Başarılı olmuş gibi yap
+        return 0;
     }
     return orig_ptrace(request, pid, addr, data);
 }
 
 int replaced_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
-    // Bazı anti-debug yöntemleri sysctl ile debugger kontrolü yapar
     if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID) {
-        // Bu sorgu genellikle process'in flag'lerini almak içindir (P_TRACED kontrolü)
-        // oldp doldurulacak bir struct'tır. Eğer P_TRACED bayrağını kaldırmak istiyorsak,
-        // burada müdahale edebiliriz. Ancak basit bir bypass için oldp'yi değiştirmek karmaşık.
-        // Biz sadece loglayalım ve orijinali çağıralım.
-        BypassLog(@"sysctl KERN_PROC_PID çağrıldı");
+        BypassLog(@"sysctl KERN_PROC_PID çağrıldı (debugger kontrolü)");
     }
     return orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
 }
@@ -220,7 +217,6 @@ static void initialize() {
     @autoreleasepool {
         BypassLog(@"Bypass kütüphanesi yükleniyor...");
         
-        // Hook'ları kur
         MSHookFunction((void *)stat, (void *)replaced_stat, (void **)&orig_stat);
         MSHookFunction((void *)open, (void *)replaced_open, (void **)&orig_open);
         MSHookFunction((void *)fopen, (void *)replaced_fopen, (void **)&orig_fopen);
@@ -230,7 +226,6 @@ static void initialize() {
         
         BypassLog(@"Hook'lar başarıyla kuruldu.");
         
-        // Bypass aktif mesajını göster (biraz gecikmeli)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nJailbreak Tespitleri Engellendi"];
         });
