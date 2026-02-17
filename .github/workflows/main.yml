@@ -3,9 +3,7 @@ name: "Kingmod Dylib Builder"
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  workflow_dispatch: # Manuel tetikleme butonu ekler
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,32 +15,33 @@ jobs:
 
       - name: Setup Theos Environment
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.2.app # Stabil Xcode sürümü
+          # Xcode'u manuel seçmek yerine sistemin default olanını kullanıyoruz
+          # Bu sayede "invalid developer directory" hatası almazsın.
           export THEOS=~/theos
           git clone --recursive https://github.com/theos/theos.git $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          git clone https://github.com/theos/sdks.git $THEOS/sdks
-          # Gereksiz dosyaları silerek alanı temiz tutar
-          rm -rf $THEOS/sdks/.git
+          # SDK'ları çekiyoruz
+          git clone https://github.com/theos/sdks.git ~/theos/sdks
+          # Sadece gereken SDK kalsın, yer açalım
+          rm -rf ~/theos/sdks/.git
 
       - name: Compile Kingmod Dylib
         run: |
           export THEOS=~/theos
-          # Jailsiz sistemler için FINALPACKAGE şart
+          # Makefile'daki mimarilere göre derleme yapar
           make clean && make FINALPACKAGE=1
           
       - name: Prepare Artifact
         run: |
           mkdir -p output
-          # .theos içindeki gizli obj klasöründen dylib'i çıkarıyoruz
-          cp $(find .theos/obj -name "*.dylib") output/Health.dylib
+          # Derlenen dylib'i bulup output klasörüne kopyalıyoruz
+          find .theos/obj -name "*.dylib" -exec cp {} output/Health.dylib \;
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: Kingmod-Dylib-Package
+          name: Kingmod-Dylib
           path: output/Health.dylib
-          retention-days: 5 # Dosyayı 5 gün saklar
