@@ -1,49 +1,48 @@
-name: Build Tweak
+name: Build SecureBypass
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v3
 
-      - name: Install Theos
+      - name: Install Dependencies
         run: |
-          if [ ! -d "$HOME/theos" ]; then
-            git clone --recursive https://github.com/theos/theos.git $HOME/theos
-          fi
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          brew install ldid make
+          echo "THEOS=~/theos" >> $GITHUB_ENV
 
-      - name: Ensure iOS SDKs are present
+      - name: Setup Theos
         run: |
-          if [ ! -d "$HOME/theos/sdks" ] || [ -z "$(ls -A $HOME/theos/sdks)" ]; then
-            git clone https://github.com/theos/sdks.git $HOME/theos/sdks
-          else
-            echo "SDKs already exist, skipping clone."
-          fi
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          # iOS SDK'sını çekiyoruz (Eğer özel bir SDK'n yoksa)
+          curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz
+          tar -xvf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
+          rm iPhoneOS14.5.sdk.tar.xz
 
-      # ***** ÖNEMLİ EKLEME: Theos'un bin dizinini PATH'e ekle *****
-      - name: Add Theos bin to PATH (for ldid)
-        run: echo "$THEOS/bin" >> $GITHUB_PATH
-
-      - name: Build Tweak
+      - name: Build Dylib
         run: |
-          cd $GITHUB_WORKSPACE
-          # Eski API uyarılarını hata sayma (derleme başarılı olsun)
-          export ADDITIONAL_CFLAGS="-Wno-deprecated-declarations -Wno-varargs"
-          make clean
-          make package
-
-      - name: Upload .deb artifact
-        uses: actions/upload-artifact@v4
+          export THEOS=~/theos
+          export PATH=$THEOS/bin:$PATH
+          
+          # Hataları önlemek için imzalama ve paketlemeyi kontrol ediyoruz
+          # FINALPACKAGE=1 dersen debug sembollerini siler, dosya boyutu küçülür.
+          make package FINALPACKAGE=1 \
+            THEOS_DEVICE_IP= \
+            DEBUG=0 \
+            STRIP=1 \
+            CODESIGN_IPA=0 \
+            SIGN_SKIP=1
+            
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: SecureBypass
-          path: packages/*.deb
+          name: SecureBypass-Dylib
+          path: .theos/obj/debug/*.dylib # Veya packages/*.deb (hangisini istiyorsan)
