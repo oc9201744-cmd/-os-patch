@@ -1,393 +1,238 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <substrate.h>
 #import <dlfcn.h>
-#import <mach-o/dyld.h>
 #import <sys/stat.h>
 #import <sys/sysctl.h>
-#import <sys/socket.h>
-#import <netinet/in.h>
-#import <arpa/inet.h>
-#import <objc/runtime.h>
-#import <objc/message.h>
+#import <mach-o/dyld.h>
 
+// MARK: - Loglama
 #ifdef DEBUG
-    #define BypassLog(fmt, ...) NSLog(@"[Bypass] " fmt, ##__VA_ARGS__)
+#define BypassLog(fmt, ...) NSLog(@"[Bypass] " fmt, ##__VA_ARGS__)
 #else
-    #define BypassLog(fmt, ...)
+#define BypassLog(fmt, ...)
 #endif
 
-// MARK: - Bypass Durumu Göstergesi
+// MARK: - Bypass Durum Göstergesi
 @interface BypassStatusView : UIView
-@property (nonatomic, strong) UILabel *statusLabel;
-@property (nonatomic, strong) NSTimer *animationTimer;
-@property (nonatomic, assign) CGFloat alphaDirection;
+@property (nonatomic, strong) UILabel *messageLabel;
++ (instancetype)sharedView;
 - (void)showWithMessage:(NSString *)message;
 - (void)hide;
 @end
 
 @implementation BypassStatusView
 
+static BypassStatusView *sharedInstance = nil;
+
++ (instancetype)sharedView {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        CGFloat width = 220;
+        CGFloat height = 60;
+        CGRect frame = CGRectMake((UIScreen.mainScreen.bounds.size.width - width) / 2,
+                                  50, width, height);
+        sharedInstance = [[BypassStatusView alloc] initWithFrame:frame];
+    });
+    return sharedInstance;
+}
+
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.backgroundColor = [UIColor colorWithRed:0.1 green:0.1 blue:0.1 alpha:0.9];
-        self.layer.cornerRadius = 10;
-        self.layer.borderWidth = 1;
-        self.layer.borderColor = [UIColor colorWithRed:0.2 green:0.8 blue:0.2 alpha:1.0].CGColor;
+        self.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
+        self.layer.cornerRadius = 12;
+        self.layer.borderWidth = 2;
+        self.layer.borderColor = [UIColor systemGreenColor].CGColor;
+        self.clipsToBounds = YES;
+        self.alpha = 0.0;
         
-        _statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 5, frame.size.width - 20, frame.size.height - 10)];
-        _statusLabel.textColor = [UIColor whiteColor];
-        _statusLabel.font = [UIFont boldSystemFontOfSize:14];
-        _statusLabel.textAlignment = NSTextAlignmentCenter;
-        _statusLabel.numberOfLines = 0;
-        [self addSubview:_statusLabel];
-        
-        _alphaDirection = 0.02;
+        _messageLabel = [[UILabel alloc] initWithFrame:self.bounds];
+        _messageLabel.textColor = UIColor.whiteColor;
+        _messageLabel.font = [UIFont boldSystemFontOfSize:16];
+        _messageLabel.textAlignment = NSTextAlignmentCenter;
+        _messageLabel.numberOfLines = 2;
+        [self addSubview:_messageLabel];
     }
     return self;
 }
 
 - (void)showWithMessage:(NSString *)message {
-    self.statusLabel.text = message;
-    self.alpha = 0.0;
-    self.hidden = NO;
+    self.messageLabel.text = message;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *keyWindow = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    UIWindowScene *ws = (UIWindowScene *)scene;
+                    keyWindow = ws.windows.firstObject;
+                    break;
+                }
+            }
+        } else {
+            keyWindow = UIApplication.sharedApplication.keyWindow;
+        }
+        [keyWindow addSubview:self];
+        [UIView animateWithDuration:0.3 animations:^{
+            self.alpha = 1.0;
+        }];
+    });
     
-    [UIView animateWithDuration:0.5 animations:^{
-        self.alpha = 1.0;
-    }];
-    
-    _animationTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 target:self selector:@selector(animatePulse) userInfo:nil repeats:YES];
-}
-
-- (void)animatePulse {
-    self.alpha += _alphaDirection;
-    if (self.alpha >= 1.0 || self.alpha <= 0.5) {
-        _alphaDirection *= -1;
-    }
+    // 7 saniye sonra otomatik gizle
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 7 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        [self hide];
+    });
 }
 
 - (void)hide {
-    [_animationTimer invalidate];
-    _animationTimer = nil;
-    
-    [UIView animateWithDuration:0.5 animations:^{
+    [UIView animateWithDuration:0.3 animations:^{
         self.alpha = 0.0;
     } completion:^(BOOL finished) {
-        self.hidden = YES;
         [self removeFromSuperview];
     }];
 }
 
 @end
 
-// MARK: - Bypass Manager
-@interface BypassManager : NSObject
-@property (nonatomic, strong) BypassStatusView *statusView;
-@property (nonatomic, assign) BOOL isBypassActive;
-+ (instancetype)sharedInstance;
-- (void)activateBypass;
-- (void)showBypassStatus;
-@end
+// MARK: - Hook'lanacak Fonksiyonların Original Pointer'ları
+static int (*orig_stat)(const char *path, struct stat *buf);
+static int (*orig_open)(const char *path, int oflag, ...);
+static FILE* (*orig_fopen)(const char *path, const char *mode);
+static int (*orig_access)(const char *path, int amode);
+static int (*orig_ptrace)(int request, pid_t pid, caddr_t addr, int data);
+static int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 
-@implementation BypassManager
-
-static BypassManager *sharedInstance = nil;
-
-+ (instancetype)sharedInstance {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        sharedInstance = [[BypassManager alloc] init];
-    });
-    return sharedInstance;
-}
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        _isBypassActive = NO;
-    }
-    return self;
-}
-
-// Fishhook için fonksiyon pointer'ları
-static int (*original_stat)(const char *, struct stat *);
-static int (*original_open)(const char *, int, ...);
-static int (*original_socket)(int, int, int);
-static int (*original_connect)(int, const struct sockaddr *, socklen_t);
-static int (*original_sysctl)(int *, u_int, void *, size_t *, void *, size_t);
-static void * (*original_dlopen)(const char *, int);
-static void * (*original_dlsym)(void *, const char *);
-static int (*original_ptrace)(int, pid_t, caddr_t, int);
-
-// Jailbreak dosya yolları (PUBG.txt'de tespit edilenler)
+// MARK: - Engellenecek Jailbreak Dosya Yolları
 static const char *jailbreak_paths[] = {
     "/Applications/Cydia.app",
+    "/Applications/FakeCarrier.app",
+    "/Applications/Icy.app",
+    "/Applications/IntelliScreen.app",
+    "/Applications/MxTube.app",
+    "/Applications/RockApp.app",
+    "/Applications/SBSettings.app",
+    "/Applications/Snoop-itConfig.app",
+    "/Applications/WinterBoard.app",
+    "/Applications/blackra1n.app",
+    "/Library/MobileSubstrate/DynamicLibraries",
     "/Library/MobileSubstrate/MobileSubstrate.dylib",
+    "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
+    "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
     "/bin/bash",
-    "/usr/sbin/sshd",
+    "/bin/sh",
     "/etc/apt",
+    "/etc/ssh/sshd_config",
     "/private/var/lib/apt",
-    "/usr/bin/ssh",
-    "/var/checkra1n.dmg",
-    "/etc/fstab",
-    "/.bootstrapped_electra",
-    "/.installed_unc0ver",
-    "/jb",
-    "/jb/lzma",
-    "/jb/amfid_payload",
-    "/jb/libjailbreak.dylib",
-    "/usr/lib/libjailbreak.dylib",
-    "/usr/lib/libsubstrate.dylib",
-    "/usr/lib/substrate",
-    "/usr/lib/substrate.dylib",
-    "/usr/lib/TweakInject.dylib",
-    "/var/binpack",
-    "/var/binpack/bin",
-    "/var/binpack/bin/bash",
-    "/Applications/Sileo.app",
-    "/Applications/Zebra.app",
-    "/Applications/Installer.app",
-    "/Applications/CoolStar.app",
-    "/Applications/Chimera.app",
-    "/Applications/Electra.app",
-    "/Applications/Unc0ver.app",
-    "/Applications/Filza.app",
-    "/Applications/MTerminal.app",
-    "/private/var/mobile/Library/Preferences/ABPattern",
-    "/private/var/mobile/Library/Preferences/amfid_payload.plist",
-    "/private/var/mobile/Library/Preferences/com.saurik.Cydia.plist",
-    "/private/var/mobile/Library/Sileo",
-    "/private/var/mobile/Library/Application Support/MTerminal",
-    "/var/mobile/Library/Application Support/MTerminal",
+    "/private/var/lib/cydia",
+    "/private/var/mobile/Library/SBSettings",
+    "/private/var/stash",
+    "/private/var/tmp/cydia.log",
+    "/usr/bin/sshd",
+    "/usr/libexec/sftp-server",
+    "/usr/libexec/ssh-keysign",
+    "/usr/sbin/sshd",
+    "/var/cache/apt",
+    "/var/lib/apt",
+    "/var/lib/cydia",
+    "/var/log/syslog",
+    "/var/tmp/cydia.log",
     NULL
 };
 
-// Atv4/atsv4 dosya kontrolleri için (PUBG.txt'de geçiyor)
-static const char *ban_dat_paths[] = {
-    "/var/mobile/Library/Preferences/atsv4.dat",
-    "/var/mobile/Library/Preferences/attv4.dat",
-    "/var/mobile/Library/Caches/atsv4.dat",
-    "/var/mobile/Library/Caches/attv4.dat",
-    NULL
-};
-
-// Hook'lanmış stat: jailbreak dosyalarını gizle
-int hooked_stat(const char *path, struct stat *buf) {
+// MARK: - Yardımcı Fonksiyon: Verilen yol jailbreak yolu mu?
+static int is_jailbreak_path(const char *path) {
+    if (!path) return 0;
     for (int i = 0; jailbreak_paths[i] != NULL; i++) {
         if (strcmp(path, jailbreak_paths[i]) == 0) {
-            BypassLog(@"stat gizlendi: %s", path);
-            errno = ENOENT;
-            return -1;
+            return 1;
         }
+        // Bazı uygulamalar dizin kontrolü yapabilir, alt dizinleri de engellemek isterseniz strstr kullanın.
+        // if (strstr(path, jailbreak_paths[i]) == path) return 1;
     }
-    for (int i = 0; ban_dat_paths[i] != NULL; i++) {
-        if (strcmp(path, ban_dat_paths[i]) == 0) {
-            BypassLog(@"ban dat gizlendi: %s", path);
-            errno = ENOENT;
-            return -1;
-        }
-    }
-    return original_stat(path, buf);
+    return 0;
 }
 
-// Hook'lanmış open: jailbreak dosyalarını açma girişimlerini engelle
-int hooked_open(const char *path, int oflag, ...) {
-    for (int i = 0; jailbreak_paths[i] != NULL; i++) {
-        if (strcmp(path, jailbreak_paths[i]) == 0) {
-            BypassLog(@"open engellendi: %s", path);
-            errno = ENOENT;
-            return -1;
-        }
+// MARK: - Hook'lar
+int replaced_stat(const char *path, struct stat *buf) {
+    if (is_jailbreak_path(path)) {
+        BypassLog(@"stat engellendi: %s", path);
+        errno = ENOENT;
+        return -1;
     }
-    for (int i = 0; ban_dat_paths[i] != NULL; i++) {
-        if (strcmp(path, ban_dat_paths[i]) == 0) {
-            BypassLog(@"ban dat open engellendi: %s", path);
-            errno = ENOENT;
-            return -1;
-        }
+    return orig_stat(path, buf);
+}
+
+int replaced_open(const char *path, int oflag, ...) {
+    if (is_jailbreak_path(path)) {
+        BypassLog(@"open engellendi: %s", path);
+        errno = ENOENT;
+        return -1;
     }
     va_list args;
     va_start(args, oflag);
-    mode_t mode = 0;
-    if (oflag & O_CREAT) {
-        mode = va_arg(args, int);
-    }
+    mode_t mode = va_arg(args, mode_t);
     va_end(args);
-    return original_open(path, oflag, mode);
+    return orig_open(path, oflag, mode);
 }
 
-// Hook'lanmış socket: localhost bağlantılarını engelle (PUBG.txt'de sub_6DEC)
-int hooked_socket(int domain, int type, int protocol) {
-    int sock = original_socket(domain, type, protocol);
-    BypassLog(@"socket oluşturuldu: %d", sock);
-    return sock;
-}
-
-int hooked_connect(int sock, const struct sockaddr *addr, socklen_t len) {
-    if (addr->sa_family == AF_INET) {
-        struct sockaddr_in *addr_in = (struct sockaddr_in *)addr;
-        char ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(addr_in->sin_addr), ip, INET_ADDRSTRLEN);
-        if (strcmp(ip, "127.0.0.1") == 0) {
-            BypassLog(@"localhost bağlantısı engellendi: %s:%d", ip, ntohs(addr_in->sin_port));
-            errno = ECONNREFUSED;
-            return -1;
-        }
+FILE* replaced_fopen(const char *path, const char *mode) {
+    if (is_jailbreak_path(path)) {
+        BypassLog(@"fopen engellendi: %s", path);
+        errno = ENOENT;
+        return NULL;
     }
-    return original_connect(sock, addr, len);
+    return orig_fopen(path, mode);
 }
 
-// Hook'lanmış sysctl: debugger tespitini engelle
-int hooked_sysctl(int *name, u_int namelen, void *info, size_t *infop, void *newinfo, size_t newlen) {
-    int ret = original_sysctl(name, namelen, info, infop, newinfo, newlen);
+int replaced_access(const char *path, int amode) {
+    if (is_jailbreak_path(path)) {
+        BypassLog(@"access engellendi: %s", path);
+        errno = ENOENT;
+        return -1;
+    }
+    return orig_access(path, amode);
+}
+
+int replaced_ptrace(int request, pid_t pid, caddr_t addr, int data) {
+    // PT_DENY_ATTACH = 31
+    if (request == 31) {
+        BypassLog(@"ptrace(PT_DENY_ATTACH) engellendi");
+        return 0; // Başarılı olmuş gibi yap
+    }
+    return orig_ptrace(request, pid, addr, data);
+}
+
+int replaced_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    // Bazı anti-debug yöntemleri sysctl ile debugger kontrolü yapar
     if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID) {
-        struct kinfo_proc *proc = (struct kinfo_proc *)info;
-        if (proc && (proc->kp_proc.p_flag & P_TRACED)) {
-            BypassLog(@"P_TRACED bayrağı temizleniyor");
-            proc->kp_proc.p_flag &= ~P_TRACED;
-        }
+        // Bu sorgu genellikle process'in flag'lerini almak içindir (P_TRACED kontrolü)
+        // oldp doldurulacak bir struct'tır. Eğer P_TRACED bayrağını kaldırmak istiyorsak,
+        // burada müdahale edebiliriz. Ancak basit bir bypass için oldp'yi değiştirmek karmaşık.
+        // Biz sadece loglayalım ve orijinali çağıralım.
+        BypassLog(@"sysctl KERN_PROC_PID çağrıldı");
     }
-    return ret;
+    return orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
 }
-
-// Hook'lanmış dlopen: şüpheli kütüphane yüklemelerini engelle
-void * hooked_dlopen(const char *path, int mode) {
-    if (path) {
-        if (strstr(path, "Substrate") || strstr(path, "substrate") ||
-            strstr(path, "TweakInject") || strstr(path, "libjailbreak") ||
-            strstr(path, "amfid_payload")) {
-            BypassLog(@"şüpheli dlopen engellendi: %s", path);
-            errno = ENOENT;
-            return NULL;
-        }
-    }
-    return original_dlopen(path, mode);
-}
-
-// Hook'lanmış dlsim: sembol aramalarını filtrele
-void * hooked_dlsym(void *handle, const char *symbol) {
-    if (symbol) {
-        if (strstr(symbol, "sub_") || strstr(symbol, "jailbreak") ||
-            strstr(symbol, "amci2") || strstr(symbol, "root_alert")) {
-            BypassLog(@"şüpheli sembol aranıyor: %s", symbol);
-            // İsteğe bağlı: NULL döndür
-            // return NULL;
-        }
-    }
-    return original_dlsym(handle, symbol);
-}
-
-// Fishhook ile sembolleri rebind et
-#import "fishhook.h"
-
-- (void)activateBypass {
-    if (_isBypassActive) return;
-    
-    BypassLog(@"Bypass aktifleştiriliyor... (iOS 17.3.1 uyumlu)");
-    
-    // Fishhook ile sistem fonksiyonlarını hook'la
-    struct rebinding rebindings[] = {
-        {"stat", hooked_stat, (void *)&original_stat},
-        {"open", hooked_open, (void *)&original_open},
-        {"socket", hooked_socket, (void *)&original_socket},
-        {"connect", hooked_connect, (void *)&original_connect},
-        {"sysctl", hooked_sysctl, (void *)&original_sysctl},
-        {"dlopen", hooked_dlopen, (void *)&original_dlopen},
-        {"dlsym", hooked_dlsym, (void *)&original_dlsym},
-    };
-    
-    int ret = rebind_symbols(rebindings, sizeof(rebindings) / sizeof(rebindings[0]));
-    if (ret == 0) {
-        BypassLog(@"Fishhook rebind başarılı");
-    } else {
-        BypassLog(@"Fishhook rebind başarısız: %d", ret);
-    }
-    
-    // Ek olarak ptrace hook'u (anti-debug)
-    original_ptrace = (int (*)(int, pid_t, caddr_t, int))dlsym(RTLD_DEFAULT, "ptrace");
-    // ptrace hook'u için ayrı bir mekanizma gerekebilir (MSHookFunction)
-    
-    _isBypassActive = YES;
-    BypassLog(@"Bypass aktif!");
-    
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [self showBypassStatus];
-    });
-}
-
-- (void)showBypassStatus {
-    UIWindowScene *windowScene = nil;
-    
-    if (@available(iOS 13.0, *)) {
-        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:UIWindowScene.class]) {
-                windowScene = (UIWindowScene *)scene;
-                break;
-            }
-        }
-    }
-    
-    UIWindow *keyWindow = nil;
-    if (windowScene) {
-        for (UIWindow *window in windowScene.windows) {
-            if (window.isKeyWindow) {
-                keyWindow = window;
-                break;
-            }
-        }
-    }
-    
-    if (!keyWindow) {
-        BypassLog(@"Key window bulunamadı, status view gösterilemiyor.");
-        return;
-    }
-    
-    if (self.statusView) {
-        [self.statusView hide];
-        self.statusView = nil;
-    }
-    
-    CGFloat width = 220;
-    CGFloat height = 70;
-    CGRect frame = CGRectMake((keyWindow.bounds.size.width - width) / 2, 
-                              50, width, height);
-    
-    self.statusView = [[BypassStatusView alloc] initWithFrame:frame];
-    self.statusView.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | 
-                                        UIViewAutoresizingFlexibleRightMargin | 
-                                        UIViewAutoresizingFlexibleBottomMargin;
-    
-    [keyWindow addSubview:self.statusView];
-    [self.statusView showWithMessage:@"🛡️ Bypass Aktif Edildi\nGüvenlik Önlemleri Pasif"];
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        [self.statusView hide];
-        self.statusView = nil;
-    });
-}
-
-@end
-
-// Fishhook implementasyonu (iOS'un kendi kütüphanesi)
-// fishhook.c dosyasını projeye eklemeyi unutmayın
 
 // MARK: - Constructor
 __attribute__((constructor))
 static void initialize() {
     @autoreleasepool {
-        BypassLog(@"Bypass kütüphanesi yükleniyor... (iOS 17.3.1)");
+        BypassLog(@"Bypass kütüphanesi yükleniyor...");
         
+        // Hook'ları kur
+        MSHookFunction((void *)stat, (void *)replaced_stat, (void **)&orig_stat);
+        MSHookFunction((void *)open, (void *)replaced_open, (void **)&orig_open);
+        MSHookFunction((void *)fopen, (void *)replaced_fopen, (void **)&orig_fopen);
+        MSHookFunction((void *)access, (void *)replaced_access, (void **)&orig_access);
+        MSHookFunction((void *)ptrace, (void *)replaced_ptrace, (void **)&orig_ptrace);
+        MSHookFunction((void *)sysctl, (void *)replaced_sysctl, (void **)&orig_sysctl);
+        
+        BypassLog(@"Hook'lar başarıyla kuruldu.");
+        
+        // Bypass aktif mesajını göster (biraz gecikmeli)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [[BypassManager sharedInstance] activateBypass];
+            [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nJailbreak Tespitleri Engellendi"];
         });
-        
-        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
-                                                           object:nil
-                                                            queue:[NSOperationQueue mainQueue]
-                                                       usingBlock:^(NSNotification * _Nonnull note) {
-            if (![BypassManager sharedInstance].isBypassActive) {
-                [[BypassManager sharedInstance] activateBypass];
-            }
-        }];
     }
 }
