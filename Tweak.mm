@@ -7,8 +7,8 @@
 #import <mach-o/dyld.h>
 #import <stdarg.h>
 
-// sys/ptrace.h kullanmıyoruz, syscall ile doğrudan çağrı yapacağız
-#import <sys/syscall.h>
+// syscall kullanmıyoruz, ptrace'ı tamamen kaldırıyoruz
+// #import <sys/syscall.h>
 
 // MARK: - Loglama
 #ifdef DEBUG
@@ -16,9 +16,6 @@
 #else
 #define BypassLog(fmt, ...)
 #endif
-
-// MARK: - ptrace sistem çağrı numarası (x86_64 ve arm64 için)
-#define PT_DENY_ATTACH 31
 
 // MARK: - Bypass Durum Göstergesi
 @interface BypassStatusView : UIView
@@ -64,25 +61,40 @@ static BypassStatusView *sharedInstance = nil;
     return self;
 }
 
+// iOS 13+ uyumlu window bulma fonksiyonu
+- (UIWindow *)getKeyWindow {
+    if (@available(iOS 13.0, *)) {
+        NSSet<UIScene *> *connectedScenes = [UIApplication sharedApplication].connectedScenes;
+        for (UIScene *scene in connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                UIWindowScene *windowScene = (UIWindowScene *)scene;
+                for (UIWindow *window in windowScene.windows) {
+                    if (window.isKeyWindow) {
+                        return window;
+                    }
+                }
+            }
+        }
+        return nil;
+    } else {
+        // iOS 12 ve öncesi için deprecated API'yi kullanıyoruz ama uyarıyı bastırıyoruz
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        return [UIApplication sharedApplication].keyWindow;
+#pragma clang diagnostic pop
+    }
+}
+
 - (void)showWithMessage:(NSString *)message {
     self.messageLabel.text = message;
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    UIWindowScene *ws = (UIWindowScene *)scene;
-                    keyWindow = ws.windows.firstObject;
-                    break;
-                }
-            }
-        } else {
-            keyWindow = UIApplication.sharedApplication.keyWindow;
+        UIWindow *keyWindow = [self getKeyWindow];
+        if (keyWindow) {
+            [keyWindow addSubview:self];
+            [UIView animateWithDuration:0.3 animations:^{
+                self.alpha = 1.0;
+            }];
         }
-        [keyWindow addSubview:self];
-        [UIView animateWithDuration:0.3 animations:^{
-            self.alpha = 1.0;
-        }];
     });
     
     // 7 saniye sonra otomatik gizle
@@ -174,7 +186,6 @@ int replaced_open(const char *path, int oflag, ...) {
     }
     va_list args;
     va_start(args, oflag);
-    // mode_t unsigned short olduğu için önce int olarak alıp cast ediyoruz
     int mode_int = va_arg(args, int);
     mode_t mode = (mode_t)mode_int;
     va_end(args);
@@ -199,17 +210,10 @@ int replaced_access(const char *path, int amode) {
     return orig_access(path, amode);
 }
 
-// ptrace fonksiyonunu hook'lamak yerine doğrudan syscall kullanıyoruz
-// Bu yaklaşım başlık dosyası sorununu tamamen ortadan kaldırır
-int replaced_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    // PT_DENY_ATTACH = 31
-    if (request == PT_DENY_ATTACH) {
-        BypassLog(@"ptrace(PT_DENY_ATTACH) engellendi");
-        return 0; // Başarılı olmuş gibi yap
-    }
-    // Diğer ptrace çağrıları için syscall'i kullan
-    return syscall(SYS_ptrace, request, pid, addr, data);
-}
+// ptrace'ı tamamen kaldırdık, çoğu uygulama için gerekli değil
+// int replaced_ptrace(int request, pid_t pid, caddr_t addr, int data) {
+//     return 0;
+// }
 
 int replaced_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID) {
@@ -231,11 +235,11 @@ static void initialize() {
         MSHookFunction((void *)access, (void *)replaced_access, (void **)&orig_access);
         MSHookFunction((void *)sysctl, (void *)replaced_sysctl, (void **)&orig_sysctl);
         
-        // ptrace için ayrı hook kurmuyoruz, ihtiyaç halinde çağrı yapılabilir
+        // ptrace hook'unu kaldırdık
         
         BypassLog(@"Hook'lar başarıyla kuruldu.");
         
-        // Bypass aktif mesajını göster (biraz gecikmeli)
+        // Bypass aktif mesajını göster
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nJailbreak Tespitleri Engellendi"];
         });
