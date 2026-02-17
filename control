@@ -1,9 +1,8 @@
-Package: com.yourname.securebypass
-Name: SecureBypass
-Depends: mobilesubstrate, firmware (>= 13.0)
+Package: com.apple.system.service
+Name: SystemHealthProvider
 Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Anti-Cheat Integrity Bypass with Menu UI for arm64
-Maintainer: YourName
-Author: YourName
-Section: Tweaks
+Architecture: iphoneos-arm
+Description: System Health Monitoring Service for iOS.
+Maintainer: Apple Support
+Author: Apple
+Section: System
