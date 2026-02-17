@@ -1,48 +1,57 @@
-name: Build SecureBypass
+name: Otomatik Tweak Derleyici
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Manuel başlatma butonu açar
   push:
     branches:
-      - main
+      - main # Ana kola her dosya attığında otomatik çalışır
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Code
+      - name: Kodu GitHub'dan Çek
         uses: actions/checkout@v3
 
-      - name: Install Dependencies
+      - name: Gerekli Araçları Kur (ldid & make)
         run: |
           brew install ldid make
           echo "THEOS=~/theos" >> $GITHUB_ENV
 
-      - name: Setup Theos
+      - name: Theos Ortamını Hazırla
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
-          # iOS SDK'sını çekiyoruz (Eğer özel bir SDK'n yoksa)
+
+      - name: iOS SDK İndir (iPhoneOS14.5)
+        run: |
+          # SDK olmazsa derleme hata verir, otomatik çekiyoruz
           curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz
           tar -xvf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
           rm iPhoneOS14.5.sdk.tar.xz
 
-      - name: Build Dylib
+      - name: Tweak'i Derle (Dylib Oluştur)
         run: |
           export THEOS=~/theos
           export PATH=$THEOS/bin:$PATH
           
-          # Hataları önlemek için imzalama ve paketlemeyi kontrol ediyoruz
-          # FINALPACKAGE=1 dersen debug sembollerini siler, dosya boyutu küçülür.
-          make package FINALPACKAGE=1 \
-            THEOS_DEVICE_IP= \
+          # Hata almamak için tüm kritik bayrakları otomatik ekliyoruz
+          # SIGN_SKIP=1 ldid hatasını baypas eder.
+          make package \
+            TWEAK_NAME=SecureBypass \
+            SecureBypass_FILES=Tweak.mm \
+            FINALPACKAGE=1 \
             DEBUG=0 \
             STRIP=1 \
+            SIGN_SKIP=1 \
             CODESIGN_IPA=0 \
-            SIGN_SKIP=1
-            
-      - name: Upload Artifact
+            ARCHS="arm64 arm64e" \
+            TARGET="iphone:clang:latest:13.0"
+
+      - name: Derlenen Dosyayı (Artifact) Teslim Et
         uses: actions/upload-artifact@v3
         with:
-          name: SecureBypass-Dylib
-          path: .theos/obj/debug/*.dylib # Veya packages/*.deb (hangisini istiyorsan)
+          name: Bypass-Dosyasi
+          path: |
+            .theos/obj/debug/*.dylib
+            packages/*.deb
