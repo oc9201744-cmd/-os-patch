@@ -1,10 +1,10 @@
 name: Otomatik Tweak Derleyici
 
 on:
-  workflow_dispatch: # Manuel başlatma butonu açar
+  workflow_dispatch:
   push:
     branches:
-      - main # Ana kola her dosya attığında otomatik çalışır
+      - main
 
 jobs:
   build:
@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Kodu GitHub'dan Çek
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # v3 -> v4 yapıldı
 
       - name: Gerekli Araçları Kur (ldid & make)
         run: |
@@ -25,7 +25,6 @@ jobs:
 
       - name: iOS SDK İndir (iPhoneOS14.5)
         run: |
-          # SDK olmazsa derleme hata verir, otomatik çekiyoruz
           curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz
           tar -xvf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
           rm iPhoneOS14.5.sdk.tar.xz
@@ -35,8 +34,6 @@ jobs:
           export THEOS=~/theos
           export PATH=$THEOS/bin:$PATH
           
-          # Hata almamak için tüm kritik bayrakları otomatik ekliyoruz
-          # SIGN_SKIP=1 ldid hatasını baypas eder.
           make package \
             TWEAK_NAME=SecureBypass \
             SecureBypass_FILES=Tweak.mm \
@@ -49,7 +46,7 @@ jobs:
             TARGET="iphone:clang:latest:13.0"
 
       - name: Derlenen Dosyayı (Artifact) Teslim Et
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # KRİTİK HATA BURADAYDI: v3 -> v4 yapıldı
         with:
           name: Bypass-Dosyasi
           path: |
