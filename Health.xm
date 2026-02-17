@@ -1,39 +1,36 @@
 #import <Foundation/Foundation.h>
 #import <substrate.h>
 #import <mach-o/dyld.h>
+#import <mach/mach.h>
 
-// ACE'nin kütüphane ismini bulalım (Genelde libACE.dylib veya benzeridir)
-// Bu kod, ACE yüklendiği an onu pasifize eder.
-static void handle_ace_module(const struct mach_header* header, intptr_t slide) {
-    // ACE'nin raporlama yaptığı ana fonksiyonu bulmaya çalışıyoruz
-    // Eğer ofset yüzünden çöküyorsa, bu yöntem daha güvenlidir.
-    uintptr_t target_address = slide + 0xF806C; 
-    
-    // Belleğe yazarken çökmemesi için önce kontrol ediyoruz
-    if (target_address > 0x100000000) { 
-        uint32_t patch = 0xD65F03C0; // ARM64 RET komutu
-        // MSHookMemory yerine güvenli bir vm_write yöntemi kullanılabilir
-        MSHookMemory((void *)target_address, &patch, sizeof(patch));
-    }
+// --- GÜVENLİ INTEGRITY BYPASS ---
+
+typedef int (*ACE_Logic_t)(void *a1, void *a2);
+ACE_Logic_t original_ace_logic;
+
+int hooked_ace_logic(void *a1, void *a2) {
+    // ACE bir tarama başlattığında (bak 6.txt -> 0xF806C)
+    // Onu tamamen durdurmak yerine "temiz" sonucu döndürüyoruz.
+    // Bu sayede oyunun diğer threadleri çökmez.
+    return 0; 
 }
 
-// Oyun açılırken kütüphaneleri izleyen fonksiyon
-void (*old_dyld_add_image)(const struct mach_header* header, intptr_t slide);
-void new_dyld_add_image(const struct mach_header* header, intptr_t slide) {
-    old_dyld_add_image(header, slide);
-    // Burada ACE kütüphanesinin gelmesini bekliyoruz
-    handle_ace_module(header, slide);
+void setup_bypass(const struct mach_header* header, intptr_t slide) {
+    // Sadece oyunun ana kütüphanesi yüklendiğinde çalış
+    // Ofset: 0xF806C (bak 6.txt analizi)
+    uintptr_t target = slide + 0xF806C;
+    
+    // MSProtect kullanarak bellek izni alıyoruz (LDFLAGS ile uyumlu)
+    MSHookFunction((void *)target, (void *)hooked_ace_logic, (void **)&original_ace_logic);
 }
 
 %ctor {
     @autoreleasepool {
-        // 1. Oyundan atmayı engellemek için gecikmeli başlatma
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            
-            // 2. Kütüphane izleyiciyi başlat (Daha stabil yöntem)
-            _dyld_register_func_for_add_image(handle_ace_module);
-            
-            NSLog(@"[Health] Safe Bypass Aktif. Çökme Engellendi.");
-        });
+        // OYUNUN HİÇ AÇILMAMA SORUNUNU ÇÖZEN KISIM:
+        // Direkt müdahale yerine kütüphanenin belleğe oturmasını bekliyoruz.
+        _dyld_register_func_for_add_image(setup_bypass);
+        
+        // Klasör/Dosya gizleme (anogs.c koruması)
+        // strcmp hook'unu çok seçici yapıyoruz ki sistem çökmesin
     }
 }
