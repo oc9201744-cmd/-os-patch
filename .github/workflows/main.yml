@@ -1,32 +1,12 @@
-# Proje Kimlik Bilgileri
 Package: com.apple.system.service
 Name: SystemHealthProvider
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: "Kingmod Dynamic Bypass Engine for Non-Jailbroken Devices"
+Description: "Kingmod Dynamic Bypass"
 Author: Apple
 Maintainer: Apple Support
-Section: System
 
-# Jailsiz Cihazlar İçin Kritik Ayarlar
-# Bu kısım Esign'ın dylib'i doğru yetkilerle imzalamasına yardımcı olur.
-Capabilities:
-  - Can-Access-All-Files: true
-  - Allow-Unsigned-Executable-Memory: true
-  - Disable-Library-Validation: true
-  - Task-Allow: true
-
-# Uygulama Filtresi (Hangi bundle ID altında çalışacağı)
-# Buraya oyunun bundle ID'sini yazıyoruz.
 Filter:
   Bundles:
     - com.tencent.ig
     - com.pubg.krmobile
-    - com.vng.pubgmobile
-    - com.rebel.twpubgm
-
-# Derleme Sonrası İşlemler (Opsiyonel)
-# Burası dylib derlendikten sonra ismini otomatik düzenlemek içindir.
-Installs:
-  /Library/MobileSubstrate/DynamicLibraries/Health.dylib:
-    mode: 0755
