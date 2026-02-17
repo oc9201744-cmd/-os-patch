@@ -15,8 +15,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      - name: Install ldid
+        run: |
+          git clone https://github.com/opa334/ldid.git
+          cd ldid
+          git submodule update --init
+          ./make.sh
+          sudo cp ldid /usr/local/bin/ldid
 
       - name: Install Theos
         run: |
