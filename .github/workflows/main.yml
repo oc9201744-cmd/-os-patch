@@ -20,6 +20,11 @@ jobs:
           git clone --recursive https://github.com/theos/theos.git $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
+      - name: Install ldid (Hata Engelleyici)
+        run: |
+          # ldid aracını kuruyoruz ki 'command not found' hatası vermesin
+          brew install ldid
+
       - name: Setup iOS SDK
         run: |
           rm -rf ${{ env.THEOS }}/sdks
@@ -28,8 +33,8 @@ jobs:
       - name: Compile Kingmod Dylib
         run: |
           export THEOS=${{ env.THEOS }}
-          # LDID=false ile imzalama hatasını engelle
-          make clean && make FINALPACKAGE=1 LDID=false
+          # Hem FINALPACKAGE hem de LDID yolunu netleştiriyoruz
+          make clean && make FINALPACKAGE=1
           
       - name: Prepare Artifact
         run: |
