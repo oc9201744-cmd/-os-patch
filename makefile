@@ -5,10 +5,10 @@ FINALPACKAGE = 1
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = Health
+LIBRARY_NAME = Health
 Health_FILES = Health.xm
 Health_CFLAGS = -fobjc-arc
-# RWX izni çökme yapıyorsa bunu kaldırabiliriz ama dinamik hook için kalsın
-Health_LDFLAGS = -Wl,-segprot,__TEXT,rwx,rwx
+# Integrity Bypass için gereken bellek flagleri
+Health_LDFLAGS = -Wl,-segprot,__TEXT,rwx,rwx 
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+include $(THEOS_MAKE_PATH)/library.mk
