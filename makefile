@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = SecureBypass
 SecureBypass_FILES = Tweak.mm
-SecureBypass_CFLAGS = -fobjc-arc
+SecureBypass_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
 SecureBypass_FRAMEWORKS = UIKit Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
