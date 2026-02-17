@@ -1,176 +1,148 @@
-#import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
 #import <substrate.h>
+#import <Foundation/Foundation.h>
 #import <dlfcn.h>
-#import <sys/stat.h>
-#import <sys/sysctl.h>
+#import <mach-o/loader.h>
 #import <mach-o/dyld.h>
-#import <stdarg.h>
+#import <CommonCrypto/CommonDigest.h>
+#import <CommonCrypto/CommonHMAC.h>
+#import <zlib.h>
 
-// Derleyicinin "keyWindow" uyarısını sustur
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-
-// MARK: - Loglama
-#ifdef DEBUG
-#define BypassLog(fmt, ...) NSLog(@"[Bypass] " fmt, ##__VA_ARGS__)
-#else
-#define BypassLog(fmt, ...)
-#endif
-
-// MARK: - Bypass Durum Göstergesi
-@interface BypassStatusView : UIView
-@property (nonatomic, strong) UILabel *messageLabel;
-+ (instancetype)sharedView;
-- (void)showWithMessage:(NSString *)message;
-- (void)hide;
-@end
-
-@implementation BypassStatusView
-
-static BypassStatusView *sharedInstance = nil;
-
-+ (instancetype)sharedView {
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        CGFloat width = 220;
-        CGFloat height = 60;
-        CGRect frame = CGRectMake((UIScreen.mainScreen.bounds.size.width - width) / 2,
-                                  50, width, height);
-        sharedInstance = [[BypassStatusView alloc] initWithFrame:frame];
-    });
-    return sharedInstance;
+// MARK: - File Operations Hooks
+static FILE* (*orig_fopen)(const char *filename, const char *mode);
+FILE* hook_fopen(const char *filename, const char *mode) {
+    // Eğer kontrol edilen dosya uygulama içindeyse ve bütünlük kontrolü için açılıyorsa
+    // gerçek dosya yerine beklenen içeriği içeren bir dosya döndürebiliriz.
+    // Ancak bu karmaşık. Şimdilik sadece orijinal fopen'ı çağıralım.
+    return orig_fopen(filename, mode);
 }
 
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (self) {
-        self.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
-        self.layer.cornerRadius = 12;
-        self.layer.borderWidth = 2;
-        self.layer.borderColor = [UIColor systemGreenColor].CGColor;
-        self.clipsToBounds = YES;
-        self.alpha = 0.0;
-        
-        _messageLabel = [[UILabel alloc] initWithFrame:self.bounds];
-        _messageLabel.textColor = UIColor.whiteColor;
-        _messageLabel.font = [UIFont boldSystemFontOfSize:16];
-        _messageLabel.textAlignment = NSTextAlignmentCenter;
-        _messageLabel.numberOfLines = 2;
-        [self addSubview:_messageLabel];
+static size_t (*orig_fread)(void *ptr, size_t size, size_t nmemb, FILE *stream);
+size_t hook_fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+    // Okunan veriyi değiştirebiliriz.
+    return orig_fread(ptr, size, nmemb, stream);
+}
+
+// MARK: - String Comparison Hooks (strcmp, memcmp, etc.)
+static int (*orig_strcmp)(const char *s1, const char *s2);
+int hook_strcmp(const char *s1, const char *s2) {
+    // Eğer karşılaştırılan string'lerden biri beklenen hash/imza ise
+    // 0 döndürerek eşit olduğunu söyleyebiliriz.
+    // Örneğin: if (strstr(s2, "expected_signature")) return 0;
+    return orig_strcmp(s1, s2);
+}
+
+static int (*orig_memcmp)(const void *s1, const void *s2, size_t n);
+int hook_memcmp(const void *s1, const void *s2, size_t n) {
+    // Aynı şekilde bellekte karşılaştırma yapılıyorsa eşit olduğunu söyle.
+    return orig_memcmp(s1, s2, n);
+}
+
+// MARK: - CRC32 Hooks (zlib)
+static uLong (*orig_crc32)(uLong crc, const Bytef *buf, uInt len);
+uLong hook_crc32(uLong crc, const Bytef *buf, uInt len) {
+    // CRC32 hesaplamasını intercept et. Gerçek hesaplama yerine sabit bir değer döndürebiliriz.
+    // Ancak bu kontrolleri bozabilir. Daha iyisi: orijinal hesaplamayı yap ama sonucu değiştirme.
+    // Eğer belirli bir buffer için beklenen crc'yi biliyorsak onu döndürebiliriz.
+    return orig_crc32(crc, buf, len);
+}
+
+// MARK: - SHA/HMAC Hooks (CommonCrypto)
+static int (*orig_CC_SHA256)(const void *data, CC_LONG len, unsigned char *md);
+int hook_CC_SHA256(const void *data, CC_LONG len, unsigned char *md) {
+    // SHA256 hesaplamasını intercept et.
+    return orig_CC_SHA256(data, len, md);
+}
+
+static int (*orig_CC_SHA256_Init)(CC_SHA256_CTX *c);
+int hook_CC_SHA256_Init(CC_SHA256_CTX *c) {
+    return orig_CC_SHA256_Init(c);
+}
+
+static int (*orig_CC_SHA256_Update)(CC_SHA256_CTX *c, const void *data, CC_LONG len);
+int hook_CC_SHA256_Update(CC_SHA256_CTX *c, const void *data, CC_LONG len) {
+    return orig_CC_SHA256_Update(c, data, len);
+}
+
+static int (*orig_CC_SHA256_Final)(unsigned char *md, CC_SHA256_CTX *c);
+int hook_CC_SHA256_Final(unsigned char *md, CC_SHA256_CTX *c) {
+    return orig_CC_SHA256_Final(md, c);
+}
+
+// MARK: - DYLD Info Hooks (image count, name, etc.)
+static uint32_t (*orig__dyld_image_count)(void);
+uint32_t hook__dyld_image_count(void) {
+    // Tweak'lerin yüklenmesini gizlemek için sayıyı azaltabiliriz.
+    uint32_t count = orig__dyld_image_count();
+    // Burada uygulama dışındaki kütüphaneleri saymamak için filtreleme yapabiliriz.
+    return count;
+}
+
+static const char* (*orig__dyld_get_image_name)(uint32_t image_index);
+const char* hook__dyld_get_image_name(uint32_t image_index) {
+    const char *name = orig__dyld_get_image_name(image_index);
+    // Eğer isim "Tweak" veya "Substrate" içeriyorsa, farklı bir isim döndürebiliriz.
+    if (name && (strstr(name, "Tweak") || strstr(name, "Substrate") || strstr(name, "Cydia"))) {
+        return "";
     }
-    return self;
+    return name;
 }
 
-- (void)showWithMessage:(NSString *)message {
-    self.messageLabel.text = message;
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *keyWindow = nil;
-        
-        // HATA DÜZELTME: iOS 13+ ve altı için güvenli pencere bulma
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
-                    UIWindowScene *windowScene = (UIWindowScene *)scene;
-                    for (UIWindow *window in windowScene.windows) {
-                        if (window.isKeyWindow) {
-                            keyWindow = window;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Eğer hala bulunamadıysa (Legacy Fallback)
-        if (!keyWindow) {
-            keyWindow = [UIApplication sharedApplication].keyWindow;
-        }
-        
-        if (keyWindow) {
-            [keyWindow addSubview:self];
-            [UIView animateWithDuration:0.3 animations:^{
-                self.alpha = 1.0;
-            }];
-        } else {
-            BypassLog(@"Hata: keyWindow bulunamadı");
-        }
-    });
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 7 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        [self hide];
-    });
+// MARK: - Ptrace Hook (anti-debug)
+static int (*orig_ptrace)(int request, pid_t pid, caddr_t addr, int data);
+int hook_ptrace(int request, pid_t pid, caddr_t addr, int data) {
+    if (request == 31) { // PT_DENY_ATTACH
+        return 0; // Başarısız olmasını sağla
+    }
+    return orig_ptrace(request, pid, addr, data);
 }
 
-- (void)hide {
-    [UIView animateWithDuration:0.3 animations:^{
-        self.alpha = 0.0;
-    } completion:^(BOOL finished) {
-        [self removeFromSuperview];
-    }];
-}
-
-@end
-
-// MARK: - Hook Pointerları
-static int (*orig_stat)(const char *path, struct stat *buf);
-static int (*orig_open)(const char *path, int oflag, ...);
-static FILE* (*orig_fopen)(const char *path, const char *mode);
-static int (*orig_access)(const char *path, int amode);
+// MARK: - sysctl Hook (anti-debug)
 static int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
-
-// MARK: - JB Yolları
-static const char *jailbreak_paths[] = {
-    "/Applications/Cydia.app", "/Library/MobileSubstrate/MobileSubstrate.dylib", "/bin/bash", "/usr/sbin/sshd", "/etc/apt", NULL
-};
-
-static int is_jailbreak_path(const char *path) {
-    if (!path) return 0;
-    for (int i = 0; jailbreak_paths[i] != NULL; i++) {
-        if (strcmp(path, jailbreak_paths[i]) == 0) return 1;
+int hook_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
+    // Eğer sorgu KERN_PROC içeriyorsa ve P_TRACED flag'ini temizle
+    if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID) {
+        int ret = orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
+        if (ret == 0 && oldp) {
+            struct kinfo_proc *proc = (struct kinfo_proc *)oldp;
+            proc->kp_proc.p_flag &= ~P_TRACED; // Debug flag'ini kaldır
+        }
+        return ret;
     }
-    return 0;
-}
-
-// MARK: - Replaced Hooks
-int replaced_stat(const char *path, struct stat *buf) {
-    if (is_jailbreak_path(path)) { errno = ENOENT; return -1; }
-    return orig_stat(path, buf);
-}
-
-int replaced_open(const char *path, int oflag, ...) {
-    if (is_jailbreak_path(path)) { errno = ENOENT; return -1; }
-    va_list args; va_start(args, oflag);
-    mode_t mode = (mode_t)va_arg(args, int);
-    va_end(args);
-    return orig_open(path, oflag, mode);
-}
-
-FILE* replaced_fopen(const char *path, const char *mode) {
-    if (is_jailbreak_path(path)) { errno = ENOENT; return NULL; }
-    return orig_fopen(path, mode);
-}
-
-int replaced_access(const char *path, int amode) {
-    if (is_jailbreak_path(path)) { errno = ENOENT; return -1; }
-    return orig_access(path, amode);
-}
-
-int replaced_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     return orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
 }
 
-// MARK: - Main
-__attribute__((constructor))
-static void initialize() {
+// MARK: - Constructor
+%ctor {
     @autoreleasepool {
-        MSHookFunction((void *)stat, (void *)replaced_stat, (void **)&orig_stat);
-        MSHookFunction((void *)open, (void *)replaced_open, (void **)&orig_open);
-        MSHookFunction((void *)fopen, (void *)replaced_fopen, (void **)&orig_fopen);
-        MSHookFunction((void *)access, (void *)replaced_access, (void **)&orig_access);
-        MSHookFunction((void *)sysctl, (void *)replaced_sysctl, (void **)&orig_sysctl);
+        // File operations
+        MSHookFunction((void *)fopen, (void *)hook_fopen, (void **)&orig_fopen);
+        MSHookFunction((void *)fread, (void *)hook_fread, (void **)&orig_fread);
         
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nTespitler Engellendi"];
-        });
+        // String comparisons
+        MSHookFunction((void *)strcmp, (void *)hook_strcmp, (void **)&orig_strcmp);
+        MSHookFunction((void *)memcmp, (void *)hook_memcmp, (void **)&orig_memcmp);
+        
+        // CRC32
+        MSHookFunction((void *)crc32, (void *)hook_crc32, (void **)&orig_crc32);
+        
+        // SHA256 (CommonCrypto)
+        void *handle = dlopen("/usr/lib/system/libcommonCrypto.dylib", RTLD_LAZY);
+        if (handle) {
+            MSHookFunction((void *)dlsym(handle, "CC_SHA256"), (void *)hook_CC_SHA256, (void **)&orig_CC_SHA256);
+            MSHookFunction((void *)dlsym(handle, "CC_SHA256_Init"), (void *)hook_CC_SHA256_Init, (void **)&orig_CC_SHA256_Init);
+            MSHookFunction((void *)dlsym(handle, "CC_SHA256_Update"), (void *)hook_CC_SHA256_Update, (void **)&orig_CC_SHA256_Update);
+            MSHookFunction((void *)dlsym(handle, "CC_SHA256_Final"), (void *)hook_CC_SHA256_Final, (void **)&orig_CC_SHA256_Final);
+            dlclose(handle);
+        }
+        
+        // DYLD
+        MSHookFunction((void *)_dyld_image_count, (void *)hook__dyld_image_count, (void **)&orig__dyld_image_count);
+        MSHookFunction((void *)_dyld_get_image_name, (void *)hook__dyld_get_image_name, (void **)&orig__dyld_get_image_name);
+        
+        // Anti-debug
+        MSHookFunction((void *)ptrace, (void *)hook_ptrace, (void **)&orig_ptrace);
+        MSHookFunction((void *)sysctl, (void *)hook_sysctl, (void **)&orig_sysctl);
+        
+        NSLog(@"[Tweak] Integrity bypass hooks loaded.");
     }
 }
