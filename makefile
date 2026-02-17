@@ -1,9 +1,15 @@
-# İmzalama hatasını (ldid) atlatmak için:
-export SIGN_SKIP = 1
-
-# Substrate kütüphanesini ve frameworkleri tanıtmak için:
+# Dosya adın Tweak.mm olduğu için buraya tam yazıyoruz
+TWEAK_NAME = SecureBypass
+SecureBypass_FILES = Tweak.mm
 SecureBypass_FRAMEWORKS = UIKit Foundation AudioToolbox
 SecureBypass_LIBRARIES = substrate
 
-# Eğer hala 'ldid' hatası alırsan şu satırı da ekle:
-export CODESIGN_IPA = 0
+# Mimari ayarları (Non-JB için arm64 şart)
+ARCHS = arm64 arm64e
+TARGET = iphone:clang:latest:13.0
+
+# Derleme sırasında imzalama hatasını engelle
+export SIGN_SKIP = 1
+
+include $(THEOS)/makefiles/common.mk
+include $(THEOS_MAKE_PATH)/tweak.mk
