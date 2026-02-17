@@ -1,4 +1,4 @@
-name: Otomatik Tweak Derleyici V44
+name: Otomatik Tweak Derleyici V45
 
 on:
   workflow_dispatch:
@@ -23,28 +23,17 @@ jobs:
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
 
-      - name: iOS SDK Kurulumu (Garantili Yöntem)
+      - name: iOS SDK Kurulumu (Git Clone Yöntemi - HATASIZ)
         run: |
-          mkdir -p ~/theos/sdks
-          # Önce ana kaynaktan dene
-          curl -L "https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz" -o iPhoneOS14.5.sdk.tar.xz
-          
-          # Dosya boyutu kontrolü (Eğer 100KB'dan küçükse LFS hatası vardır, yedek kaynaktan çek)
-          FILESIZE=$(stat -f%z "iPhoneOS14.5.sdk.tar.xz")
-          if [ $FILESIZE -lt 100000 ]; then
-            echo "SDK dosyası bozuk (LFS Pointer), yedek kaynaktan çekiliyor..."
-            curl -L "https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS14.5.sdk.tar.xz" -o iPhoneOS14.5.sdk.tar.xz
-          fi
-          
-          tar -xf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
-          rm iPhoneOS14.5.sdk.tar.xz
+          # curl yerine git clone kullanarak LFS pointer hatasını engelliyoruz
+          git clone --depth 1 https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Tweak'i Derle (Dylib Oluştur)
         run: |
           export THEOS=~/theos
           export PATH=$THEOS/bin:$PATH
           
-          # Tweak.mm dosyanı ve ban korumalı ayarlarını kullanarak derle
+          # Tweak.mm ve ban korumalı ayarlarınla derle
           make package \
             TWEAK_NAME=SecureBypass \
             SecureBypass_FILES=Tweak.mm \
@@ -59,7 +48,7 @@ jobs:
       - name: Derlenen Dosyayı (Artifact) Teslim Et
         uses: actions/upload-artifact@v4
         with:
-          name: SecureBypass-V44
+          name: SecureBypass-V45
           path: |
             .theos/obj/debug/*.dylib
             packages/*.deb
