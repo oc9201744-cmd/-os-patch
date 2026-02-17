@@ -15,29 +15,27 @@ jobs:
 
       - name: Setup Theos Environment
         run: |
-          # Xcode'u manuel seçmek yerine sistemin default olanını kullanıyoruz
-          # Bu sayede "invalid developer directory" hatası almazsın.
           export THEOS=~/theos
+          # Klasör zaten varsa sil ki 'already exists' hatası vermesin
+          rm -rf $THEOS
           git clone --recursive https://github.com/theos/theos.git $THEOS
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
       - name: Setup iOS SDK
         run: |
-          # SDK'ları çekiyoruz
-          git clone https://github.com/theos/sdks.git ~/theos/sdks
-          # Sadece gereken SDK kalsın, yer açalım
-          rm -rf ~/theos/sdks/.git
+          # SDK klasörünü temizleyip taze klon çekiyoruz
+          rm -rf ${{ env.THEOS }}/sdks
+          git clone --depth 1 https://github.com/theos/sdks.git ${{ env.THEOS }}/sdks
 
       - name: Compile Kingmod Dylib
         run: |
-          export THEOS=~/theos
-          # Makefile'daki mimarilere göre derleme yapar
+          export THEOS=${{ env.THEOS }}
           make clean && make FINALPACKAGE=1
           
       - name: Prepare Artifact
         run: |
           mkdir -p output
-          # Derlenen dylib'i bulup output klasörüne kopyalıyoruz
+          # Derlenen dylib'i bul ve kopyala
           find .theos/obj -name "*.dylib" -exec cp {} output/Health.dylib \;
 
       - name: Upload Result
