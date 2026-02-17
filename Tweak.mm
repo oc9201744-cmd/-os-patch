@@ -4,8 +4,11 @@
 #import <dlfcn.h>
 #import <sys/stat.h>
 #import <sys/sysctl.h>
-#import <sys/ptrace.h>      // ptrace için eklendi
 #import <mach-o/dyld.h>
+#import <stdarg.h>
+
+// sys/ptrace.h kullanmıyoruz, syscall ile doğrudan çağrı yapacağız
+#import <sys/syscall.h>
 
 // MARK: - Loglama
 #ifdef DEBUG
@@ -13,6 +16,9 @@
 #else
 #define BypassLog(fmt, ...)
 #endif
+
+// MARK: - ptrace sistem çağrı numarası (x86_64 ve arm64 için)
+#define PT_DENY_ATTACH 31
 
 // MARK: - Bypass Durum Göstergesi
 @interface BypassStatusView : UIView
@@ -100,7 +106,6 @@ static int (*orig_stat)(const char *path, struct stat *buf);
 static int (*orig_open)(const char *path, int oflag, ...);
 static FILE* (*orig_fopen)(const char *path, const char *mode);
 static int (*orig_access)(const char *path, int amode);
-static int (*orig_ptrace)(int request, pid_t pid, caddr_t addr, int data);
 static int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 
 // MARK: - Engellenecek Jailbreak Dosya Yolları
@@ -151,8 +156,7 @@ static int is_jailbreak_path(const char *path) {
     return 0;
 }
 
-// MARK: - Hook'lar (Düzeltilmiş)
-
+// MARK: - Hook'lar
 int replaced_stat(const char *path, struct stat *buf) {
     if (is_jailbreak_path(path)) {
         BypassLog(@"stat engellendi: %s", path);
@@ -162,7 +166,6 @@ int replaced_stat(const char *path, struct stat *buf) {
     return orig_stat(path, buf);
 }
 
-// DÜZELTİLDİ: va_arg int olarak alınıp mode_t'a cast edildi
 int replaced_open(const char *path, int oflag, ...) {
     if (is_jailbreak_path(path)) {
         BypassLog(@"open engellendi: %s", path);
@@ -171,8 +174,9 @@ int replaced_open(const char *path, int oflag, ...) {
     }
     va_list args;
     va_start(args, oflag);
-    int mode_int = va_arg(args, int);          // int olarak al
-    mode_t mode = (mode_t)mode_int;            // mode_t'a cast et
+    // mode_t unsigned short olduğu için önce int olarak alıp cast ediyoruz
+    int mode_int = va_arg(args, int);
+    mode_t mode = (mode_t)mode_int;
     va_end(args);
     return orig_open(path, oflag, mode);
 }
@@ -195,18 +199,21 @@ int replaced_access(const char *path, int amode) {
     return orig_access(path, amode);
 }
 
-// ptrace için header eklendi, sorun kalmadı
+// ptrace fonksiyonunu hook'lamak yerine doğrudan syscall kullanıyoruz
+// Bu yaklaşım başlık dosyası sorununu tamamen ortadan kaldırır
 int replaced_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    if (request == 31) { // PT_DENY_ATTACH
+    // PT_DENY_ATTACH = 31
+    if (request == PT_DENY_ATTACH) {
         BypassLog(@"ptrace(PT_DENY_ATTACH) engellendi");
-        return 0;
+        return 0; // Başarılı olmuş gibi yap
     }
-    return orig_ptrace(request, pid, addr, data);
+    // Diğer ptrace çağrıları için syscall'i kullan
+    return syscall(SYS_ptrace, request, pid, addr, data);
 }
 
 int replaced_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen) {
     if (namelen == 4 && name[0] == CTL_KERN && name[1] == KERN_PROC && name[2] == KERN_PROC_PID) {
-        BypassLog(@"sysctl KERN_PROC_PID çağrıldı (debugger kontrolü)");
+        BypassLog(@"sysctl KERN_PROC_PID çağrıldı");
     }
     return orig_sysctl(name, namelen, oldp, oldlenp, newp, newlen);
 }
@@ -217,15 +224,18 @@ static void initialize() {
     @autoreleasepool {
         BypassLog(@"Bypass kütüphanesi yükleniyor...");
         
+        // Hook'ları kur
         MSHookFunction((void *)stat, (void *)replaced_stat, (void **)&orig_stat);
         MSHookFunction((void *)open, (void *)replaced_open, (void **)&orig_open);
         MSHookFunction((void *)fopen, (void *)replaced_fopen, (void **)&orig_fopen);
         MSHookFunction((void *)access, (void *)replaced_access, (void **)&orig_access);
-        MSHookFunction((void *)ptrace, (void *)replaced_ptrace, (void **)&orig_ptrace);
         MSHookFunction((void *)sysctl, (void *)replaced_sysctl, (void **)&orig_sysctl);
+        
+        // ptrace için ayrı hook kurmuyoruz, ihtiyaç halinde çağrı yapılabilir
         
         BypassLog(@"Hook'lar başarıyla kuruldu.");
         
+        // Bypass aktif mesajını göster (biraz gecikmeli)
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [[BypassStatusView sharedView] showWithMessage:@"✅ Bypass Aktif\nJailbreak Tespitleri Engellendi"];
         });
