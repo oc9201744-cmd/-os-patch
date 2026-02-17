@@ -1,47 +1,67 @@
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <substrate.h>
 #import <sys/stat.h>
-#import <dlfcn.h>
 
-// 1. Dosya Sistemi Koruması (Bypass Integrity Check)
-// Oyun kendi klasörünü tararken hileli dosyaları görmemeli.
-int (*old_stat)(const char *path, struct stat *buf);
+// --- BYPASS KATMANI ---
+// Oyunun kendi bütünlüğünü kontrol etmesini engeller (stat hook)
+static int (*old_stat)(const char *path, struct stat *buf);
 int new_stat(const char *path, struct stat *buf) {
-    // Eğer oyun 'Kingmod' veya senin tweak dosyanı arıyorsa 'yok' de.
-    if (strstr(path, "Kingmod") || strstr(path, "tweak.dylib")) {
-        errno = ENOENT;
-        return -1;
+    if (path != NULL) {
+        // Eğer anti-cheat hile dosyalarını veya tweak ismini ararsa 'yok' cevabı ver
+        if (strstr(path, "SecureBypass") || strstr(path, "Kingmod") || strstr(path, ".deb")) {
+            return -1; 
+        }
     }
     return old_stat(path, buf);
 }
 
-// 2. Debugger Koruması (Anti-Anti-Debug)
-// Oyun ptrace kullanarak kendini izleyip izlemediğini kontrol eder.
-int (*old_ptrace)(int request, pid_t pid, caddr_t addr, int data);
-int new_ptrace(int request, pid_t pid, caddr_t addr, int data) {
-    if (request == 31) { // PT_DENY_ATTACH
-        return 0; // Engelleme isteğini görmezden gel
+// --- UI MENÜ KATMANI ---
+@interface SecureUI : UIView
+@end
+
+@implementation SecureUI
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.85];
+        self.layer.cornerRadius = 12;
+        self.layer.borderWidth = 2;
+        self.layer.borderColor = [UIColor cyanColor].CGColor;
+
+        UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(0, 10, frame.size.width, 20)];
+        title.text = @"BYPASS ACTIVE";
+        title.textColor = [UIColor cyanColor];
+        title.textAlignment = NSTextAlignmentCenter;
+        title.font = [UIFont boldSystemFontOfSize:14];
+        [self addSubview:title];
+
+        UILabel *msg = [[UILabel alloc] initWithFrame:CGRectMake(0, 35, frame.size.width, 20)];
+        msg.text = @"Status: Anti-Ban On";
+        msg.textColor = [UIColor whiteColor];
+        msg.textAlignment = NSTextAlignmentCenter;
+        msg.font = [UIFont systemFontOfSize:10];
+        [self addSubview:msg];
     }
-    return old_ptrace(request, pid, addr, data);
+    return self;
 }
+@end
 
-// 3. Hafıza Yaması (Gürültüsüz Patch)
-void apply_memory_patch() {
-    // Statik patch yerine, çalışma zamanında (runtime) güvenli yazma
-    uintptr_t target_address = 0x1234567; // Burası senin bulduğun offset
-    uint32_t patch_value = 0xD503201F; // Örn: NOP komutu
-    
-    // Bellek korumasını geçici olarak kaldır (mprotect mantığı)
-    MSHookMemory((void *)target_address, &patch_value, sizeof(patch_value));
-}
-
+// --- CONSTRUCTOR (Giriş Noktası) ---
 %ctor {
-    NSLog(@"[Bypass] Başlatılıyor...");
-    
-    // Sistem fonksiyonlarını kancala (Hook)
-    MSHookFunction((void *)stat, (void *)new_stat, (void *) &old_stat);
-    MSHookFunction((void *)dlsym(RTLD_DEFAULT, "ptrace"), (void *)new_ptrace, (void *) &old_ptrace);
-    
-    // Yamayı uygula
-    apply_memory_patch();
+    @autoreleasepool {
+        // 1. Bypass'ı aktif et (Integrity check'i kör eder)
+        MSHookFunction((void *)stat, (void *)new_stat, (void **)&old_stat);
+        
+        // 2. UI'ı 4 saniye sonra ekrana bas
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIWindow *win = [[UIApplication sharedApplication] keyWindow];
+            if (win) {
+                SecureUI *menu = [[SecureUI alloc] initWithFrame:CGRectMake(30, 60, 150, 70)];
+                [win addSubview:menu];
+            }
+        });
+        
+        NSLog(@"[SecureBypass] Tweak ve UI başarıyla yüklendi.");
+    }
 }
