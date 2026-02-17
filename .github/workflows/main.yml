@@ -1,12 +1,48 @@
-Package: com.apple.system.service
-Name: SystemHealthProvider
-Version: 1.0.0
-Architecture: iphoneos-arm
-Description: "Kingmod Dynamic Bypass"
-Author: Apple
-Maintainer: Apple Support
+name: "Kingmod Dylib Builder"
 
-Filter:
-  Bundles:
-    - com.tencent.ig
-    - com.pubg.krmobile
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Manuel tetikleme butonu ekler
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Theos Environment
+        run: |
+          sudo xcode-select -s /Applications/Xcode_15.2.app # Stabil Xcode sürümü
+          export THEOS=~/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+
+      - name: Setup iOS SDK
+        run: |
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
+          # Gereksiz dosyaları silerek alanı temiz tutar
+          rm -rf $THEOS/sdks/.git
+
+      - name: Compile Kingmod Dylib
+        run: |
+          export THEOS=~/theos
+          # Jailsiz sistemler için FINALPACKAGE şart
+          make clean && make FINALPACKAGE=1
+          
+      - name: Prepare Artifact
+        run: |
+          mkdir -p output
+          # .theos içindeki gizli obj klasöründen dylib'i çıkarıyoruz
+          cp $(find .theos/obj -name "*.dylib") output/Health.dylib
+
+      - name: Upload Result
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kingmod-Dylib-Package
+          path: output/Health.dylib
+          retention-days: 5 # Dosyayı 5 gün saklar
