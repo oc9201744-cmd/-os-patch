@@ -3,7 +3,7 @@ Name: SecureBypass
 Depends: mobilesubstrate
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Jailbreak tespitlerini bypass eder ve durumu gösterir
+Description: Jailbreak detection bypass with status indicator
 Maintainer: Your Name
 Author: Your Name
 Section: Tweaks
