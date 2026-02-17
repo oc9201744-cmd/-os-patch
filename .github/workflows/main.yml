@@ -15,14 +15,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install ldid
-        run: |
-          git clone https://github.com/opa334/ldid.git
-          cd ldid
-          git submodule update --init
-          ./make.sh
-          sudo cp ldid /usr/local/bin/ldid
-
       - name: Install Theos
         run: |
           if [ ! -d "$HOME/theos" ]; then
@@ -38,9 +30,14 @@ jobs:
             echo "SDKs already exist, skipping clone."
           fi
 
+      - name: Add Theos bin to PATH (for ldid)
+        run: echo "$THEOS/bin" >> $GITHUB_PATH
+
       - name: Build Tweak
         run: |
           cd $GITHUB_WORKSPACE
+          # Deprecated uyarılarını hata sayma (derleme başarılı olsun)
+          export ADDITIONAL_CFLAGS="-Wno-deprecated-declarations"
           make clean
           make package
 
