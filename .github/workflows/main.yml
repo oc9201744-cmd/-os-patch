@@ -30,27 +30,15 @@ jobs:
             echo "SDKs already exist, skipping clone."
           fi
 
-      # Bu adım KALDIRILDI: PATH güncellemesi her zaman işe yaramayabiliyor.
-      # - name: Add Theos bin to PATH (for ldid)
-      #   run: echo "$THEOS/bin" >> $GITHUB_PATH
-
-      # YENİ ADIM: ldid'in varlığını kontrol et ve yoksa Theos'tan sembolik link oluştur.
-      - name: Ensure ldid is available in /usr/local/bin
-        run: |
-          if [ ! -f "/usr/local/bin/ldid" ]; then
-            echo "ldid not found in /usr/local/bin. Creating symlink from Theos..."
-            sudo ln -s $THEOS/bin/ldid /usr/local/bin/ldid
-          else
-            echo "ldid already exists in /usr/local/bin."
-          fi
-          # Kontrol: ldid çalışıyor mu?
-          ldid || echo "ldid command executed (or failed, but we proceed)."
+      # ***** ÖNEMLİ EKLEME: Theos'un bin dizinini PATH'e ekle *****
+      - name: Add Theos bin to PATH (for ldid)
+        run: echo "$THEOS/bin" >> $GITHUB_PATH
 
       - name: Build Tweak
         run: |
           cd $GITHUB_WORKSPACE
-          # Deprecated uyarılarını hata sayma (derleme başarılı olsun)
-          export ADDITIONAL_CFLAGS="-Wno-deprecated-declarations"
+          # Eski API uyarılarını hata sayma (derleme başarılı olsun)
+          export ADDITIONAL_CFLAGS="-Wno-deprecated-declarations -Wno-varargs"
           make clean
           make package
 
