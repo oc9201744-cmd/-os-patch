@@ -1,4 +1,4 @@
-name: Otomatik Tweak Derleyici V45
+name: Otomatik Tweak Derleyici V46
 
 on:
   workflow_dispatch:
@@ -23,9 +23,11 @@ jobs:
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
 
-      - name: iOS SDK Kurulumu (Git Clone Yöntemi - HATASIZ)
+      - name: iOS SDK Kurulumu (Klasör Temizliği + Git Clone)
         run: |
-          # curl yerine git clone kullanarak LFS pointer hatasını engelliyoruz
+          # Theos'un oluşturduğu boş sdks klasörünü siliyoruz
+          rm -rf ~/theos/sdks
+          # Şimdi gerçek SDK'ları klonlayabiliriz
           git clone --depth 1 https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Tweak'i Derle (Dylib Oluştur)
@@ -48,7 +50,7 @@ jobs:
       - name: Derlenen Dosyayı (Artifact) Teslim Et
         uses: actions/upload-artifact@v4
         with:
-          name: SecureBypass-V45
+          name: SecureBypass-V46
           path: |
             .theos/obj/debug/*.dylib
             packages/*.deb
