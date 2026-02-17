@@ -1,4 +1,4 @@
-name: Otomatik Tweak Derleyici
+name: Otomatik Tweak Derleyici V44
 
 on:
   workflow_dispatch:
@@ -12,9 +12,9 @@ jobs:
 
     steps:
       - name: Kodu GitHub'dan Çek
-        uses: actions/checkout@v4 # v3 -> v4 yapıldı
+        uses: actions/checkout@v4
 
-      - name: Gerekli Araçları Kur (ldid & make)
+      - name: Gerekli Araçları Kur
         run: |
           brew install ldid make
           echo "THEOS=~/theos" >> $GITHUB_ENV
@@ -23,10 +23,20 @@ jobs:
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
 
-      - name: iOS SDK İndir (iPhoneOS14.5)
+      - name: iOS SDK Kurulumu (Garantili Yöntem)
         run: |
-          curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz
-          tar -xvf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
+          mkdir -p ~/theos/sdks
+          # Önce ana kaynaktan dene
+          curl -L "https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz" -o iPhoneOS14.5.sdk.tar.xz
+          
+          # Dosya boyutu kontrolü (Eğer 100KB'dan küçükse LFS hatası vardır, yedek kaynaktan çek)
+          FILESIZE=$(stat -f%z "iPhoneOS14.5.sdk.tar.xz")
+          if [ $FILESIZE -lt 100000 ]; then
+            echo "SDK dosyası bozuk (LFS Pointer), yedek kaynaktan çekiliyor..."
+            curl -L "https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS14.5.sdk.tar.xz" -o iPhoneOS14.5.sdk.tar.xz
+          fi
+          
+          tar -xf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
           rm iPhoneOS14.5.sdk.tar.xz
 
       - name: Tweak'i Derle (Dylib Oluştur)
@@ -34,6 +44,7 @@ jobs:
           export THEOS=~/theos
           export PATH=$THEOS/bin:$PATH
           
+          # Tweak.mm dosyanı ve ban korumalı ayarlarını kullanarak derle
           make package \
             TWEAK_NAME=SecureBypass \
             SecureBypass_FILES=Tweak.mm \
@@ -43,12 +54,12 @@ jobs:
             SIGN_SKIP=1 \
             CODESIGN_IPA=0 \
             ARCHS="arm64 arm64e" \
-            TARGET="iphone:clang:latest:13.0"
+            TARGET="iphone:clang:latest:14.0"
 
       - name: Derlenen Dosyayı (Artifact) Teslim Et
-        uses: actions/upload-artifact@v4 # KRİTİK HATA BURADAYDI: v3 -> v4 yapıldı
+        uses: actions/upload-artifact@v4
         with:
-          name: Bypass-Dosyasi
+          name: SecureBypass-V44
           path: |
             .theos/obj/debug/*.dylib
             packages/*.deb
