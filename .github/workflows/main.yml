@@ -20,6 +20,8 @@ jobs:
 
       - name: Download iOS SDK
         run: |
+          # Eğer klasör varsa sil, sonra temizce clone yap
+          rm -rf ~/theos/sdks
           git clone --quiet https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Compile Tweak
@@ -31,12 +33,12 @@ jobs:
       - name: Extract Dylib
         run: |
           mkdir -p output
-          if [ -d "packages" ]; then
+          if [ -f packages/*.deb ]; then
             find packages/*.deb -exec dpkg-deb -x {} temp_deb \;
             find temp_deb -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           else
-            echo "DEB dosyasi bulunamadi!"
-            exit 1
+            # Alternatif: Deb oluşmadıysa dylib'i .theos içinden çek
+            find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           fi
 
       - name: Upload Dylib
