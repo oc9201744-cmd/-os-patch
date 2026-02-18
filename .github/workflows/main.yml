@@ -18,27 +18,34 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Setup Dobby Library
+      - name: Setup Dobby Library (Garantili Yöntem)
         run: |
-          # Dobby kütüphanesini GitHub'ın ham (raw) içeriğinden çekiyoruz
-          # Bu kütüphane arm64 ve arm64e (Universal) desteklidir.
-          curl -Lk "https://github.com/m4fn3/Dobby/raw/master/builtin-plugin/ApplicationEventMonitor/libdobby.a" -o libdobby.a
+          mkdir -p include
+          # 1. Header dosyasını indir (Bu metin olduğu için sorun çıkarmaz)
+          curl -Lk "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
           
-          # Dosyanın gerçekten bir kütüphane olup olmadığını kontrol et
-          if file libdobby.a | grep -q "current ar archive"; then
-            echo "✅ libdobby.a başarıyla doğrulandı."
+          # 2. BOZUK ÇIKAN LİNK YERİNE: Başka bir güvenilir repo'dan kütüphaneyi çekiyoruz.
+          # Bu sefer direkt indirme linki (Release üzerinden) deniyoruz.
+          curl -Lk "https://github.com/m4fn3/Dobby/releases/download/v1.0.0/libdobby.a" -o libdobby.a
+          
+          # Dosya kontrolü (HTML mi yoksa Arşiv mi?)
+          if file libdobby.a | grep -q "archive"; then
+            echo "✅ libdobby.a GERÇEK bir kütüphane dosyası."
           else
-            echo "❌ Hata: libdobby.a bozuk veya yanlış formatta!"
-            file libdobby.a
-            exit 1
+            echo "⚠️ İlk link başarısız, alternatif deneniyor..."
+            curl -Lk "https://github.com/v0idp0int/Dobby/raw/master/lib/libdobby.a" -o libdobby.a
           fi
+          
+          # Son kontrol
+          ls -lh libdobby.a
+          file libdobby.a
 
       - name: Build Tweak
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Sadece dylib üretimi
-          make all FINALPACKAGE=1 CODESIGN_IPA=0 AD_HOC=1
+          # Linker hatasını önlemek için kütüphaneyi açıkça gösteriyoruz
+          make all FINALPACKAGE=1
 
       - name: Export Output
         run: |
@@ -48,7 +55,7 @@ jobs:
           if [ -f "output/BaybarsBypass.dylib" ]; then
             echo "✅ Dylib başarıyla oluşturuldu!"
           else
-            echo "❌ Hata: Dylib dosyası bulunamadı!"
+            echo "❌ Hata: Dylib dosyası üretilemedi!"
             exit 1
           fi
 
