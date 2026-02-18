@@ -13,29 +13,22 @@ jobs:
           echo "THEOS=~/theos" >> $GITHUB_ENV
           echo "~/theos/bin" >> $GITHUB_PATH
 
-      - name: Setup SDK (Fixed)
+      - name: Link System SDK (Fixed)
         run: |
-          # SDK klasörünü oluştur
+          # SDK indirmek yerine Xcode içindeki hazır SDK'yı Theos'a bağla
           mkdir -p ~/theos/sdks
-          # Doğrudan tar.xz dosyasını çekmek yerine alternatif linki deneyelim
-          # -L yönlendirmeleri izler, -k güvensiz SSL'e izin verir
-          curl -Lk https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz -o iPhoneOS14.5.sdk.tar.xz
-          
-          # Dosyanın inip inmediğini kontrol et
-          ls -lh iPhoneOS14.5.sdk.tar.xz
-          
-          # Açmaya çalış
-          tar -xf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
-          rm iPhoneOS14.5.sdk.tar.xz
+          ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
+          # SDK'nın orada olduğunu doğrula
+          ls -l ~/theos/sdks/
 
       - name: Build
         run: |
-          make package FINALPACKAGE=1
+          # SDK yolunu açıkça belirterek build al
+          make package FINALPACKAGE=1 SDKVERSION=15.0
 
       - name: Export
         run: |
           mkdir -p output
-          # Dylib'i her türlü bulur ve kopyalar
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
 
       - uses: actions/upload-artifact@v4
