@@ -1,17 +1,23 @@
-name: Build Dylib
+name: Build iOS Dylib
 
 on:
   workflow_dispatch:
+  push:
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Build dylib
+      - name: Verify files
+        run: |
+          echo "Repo files:"
+          ls -R
+
+      - name: Build tweak.dylib
         run: |
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 
@@ -21,8 +27,9 @@ jobs:
             -isysroot $SDK \
             -miphoneos-version-min=12.0 \
             -fobjc-arc \
+            -std=c++17 \
             -Iinclude \
-            Tweak.xm \
+            Tweak.mm \
             libdobby.a \
             -framework Foundation \
             -lc++ \
