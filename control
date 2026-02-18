@@ -1,8 +1,8 @@
-Package: com.example.mytweak
-Name: MyDobbyTweak
+Package: com.test.dobbydemo
+Name: DobbyDemo
 Version: 1.0
-Architecture: iphoneos-arm64
-Description: Dobby based dylib
-Maintainer: you
-Author: you
+Architecture: iphoneos-arm
+Description: Dobby test dylib
+Maintainer: test
+Author: test
 Section: Tweaks
