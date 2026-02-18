@@ -1,4 +1,4 @@
-name: Baybars Auto Builder
+name: Baybars Dobby Builder
 on: [push, workflow_dispatch]
 
 jobs:
@@ -13,33 +13,54 @@ jobs:
           echo "THEOS=~/theos" >> $GITHUB_ENV
           echo "~/theos/bin" >> $GITHUB_PATH
 
-      - name: Setup SDK
+      - name: Setup iOS SDK
         run: |
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Build Tweak
+      - name: Download and Build Dobby (BepInEx)
+        run: |
+          git clone --recursive https://github.com/BepInEx/Dobby.git dobby_src
+          cd dobby_src
+          mkdir build && cd build
+          # iOS arm64 ve arm64e (PAC) için Dobby'yi derliyoruz
+          cmake .. -G Xcode \
+          -DCMAKE_SYSTEM_NAME=iOS \
+          -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
+          -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+          -DDOBBY_GENERATE_SHARED=OFF
+          
+          xcodebuild -configuration Release -target dobby -sdk iphoneos
+          
+          # Derlenen kütüphaneyi ve header'ı ana dizine taşı
+          cd ../..
+          mkdir -p include
+          cp dobby_src/include/dobby.h include/
+          cp dobby_src/build/Release-iphoneos/libdobby.a ./libdobby.a
+
+      - name: Build Tweak with Dobby
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Codesign hatasını görmezden gelmek için AD_HOC=1 ekledik
-          make package FINALPACKAGE=1 CODESIGN_IPA=0 AD_HOC=1
-        continue-on-error: true # İmza hatası verse bile devam et dedik
+          # Codesign hatasını geçmek ve paketi oluşturmak için
+          make package FINALPACKAGE=1 codesign=0 AD_HOC=1
+        continue-on-error: true
 
       - name: Export Output
         run: |
           mkdir -p output
-          # .theos/obj klasöründeki her şeyi tara ve dylib'i al
+          # .theos/obj altındaki dylib dosyasını bulup alıyoruz
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           
           if [ -f "output/BaybarsBypass.dylib" ]; then
-            echo "Dylib basariyla kurtarildi!"
+            echo "Dylib başarıyla oluşturuldu ve Dobby içine gömüldü!"
           else
-            echo "Dylib bulunamadi!"
+            echo "Hata: Dylib dosyası bulunamadı!"
             exit 1
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass
+          name: BaybarsBypass_Dobby
           path: output/
