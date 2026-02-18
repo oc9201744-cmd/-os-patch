@@ -23,38 +23,50 @@ jobs:
           git clone --recursive https://github.com/BepInEx/Dobby.git dobby_src
           cd dobby_src
           mkdir build && cd build
-          # iOS arm64 ve arm64e (PAC) için Dobby'yi derliyoruz
+          
+          # PAC ve iOS için CMake ayarları
           cmake .. -G Xcode \
           -DCMAKE_SYSTEM_NAME=iOS \
           -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
-          -DCMAKE_SYSTEM_PROCESSOR=arm64 \
           -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-          -DDOBBY_GENERATE_SHARED=OFF
+          -DDOBBY_GENERATE_SHARED=OFF \
+          -DDOBBY_DEBUG=OFF
           
+          # Derleme
           xcodebuild -configuration Release -target dobby -sdk iphoneos
           
-          # Derlenen kütüphaneyi ve header'ı ana dizine taşı
           cd ../..
           mkdir -p include
+          
+          # Header'ı kopyala
           cp dobby_src/include/dobby.h include/
-          cp dobby_src/build/Release-iphoneos/libdobby.a ./libdobby.a
+          
+          # KRİTİK NOKTA: Dosyayı nerede olursa olsun bul ve ana dizine getir
+          find dobby_src/build -name "libdobby.a" -exec cp {} ./libdobby.a \;
+          
+          if [ -f "./libdobby.a" ]; then
+            echo "Dobby kütüphanesi başarıyla bulundu!"
+          else
+            echo "Hata: libdobby.a hala bulunamadı!"
+            exit 1
+          fi
 
       - name: Build Tweak with Dobby
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Codesign hatasını geçmek ve paketi oluşturmak için
-          make package FINALPACKAGE=1 codesign=0 AD_HOC=1
+          # Sadece dylib üretmek için 'all' kullanabiliriz, paketleme hatasını engeller
+          make all FINALPACKAGE=1 codesign=0 AD_HOC=1
         continue-on-error: true
 
       - name: Export Output
         run: |
           mkdir -p output
-          # .theos/obj altındaki dylib dosyasını bulup alıyoruz
+          # .theos içindeki derlenmiş dylib'i kurtar
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           
           if [ -f "output/BaybarsBypass.dylib" ]; then
-            echo "Dylib başarıyla oluşturuldu ve Dobby içine gömüldü!"
+            echo "Dylib başarıyla oluşturuldu!"
           else
             echo "Hata: Dylib dosyası bulunamadı!"
             exit 1
@@ -62,5 +74,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass_Dobby
+          name: BaybarsBypass_Dobby_Final
           path: output/
