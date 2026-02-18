@@ -1,35 +1,47 @@
 name: Baybars-Build-Engine
 
 on:
-  workflow_dispatch: # Butona basınca çalıştır
+  workflow_dispatch: # Manuel başlatma butonu
 
 jobs:
   build-ios:
     runs-on: macos-latest
     
     steps:
-      - name: Repoyu Çek
+      - name: Repoyu Cek
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Bağımlılıkları Kur
+      - name: Xcode Ortamini Hazirla
         run: |
-          brew install cmake
-          # SDK yollarını doğrula
-          sudo xcode-select -s /Applications/Xcode_15.2.app
+          # Hatalı xcode-select yollarını temizle ve varsayılanı kullan
+          sudo xcode-select -r
+          xcrun --sdk iphoneos --show-sdk-path
+          
+      - name: CMAKE Kurulumu
+        run: |
+          # Eğer yüklü değilse kur, yüklüyse güncelleme yapma (vakit kazan)
+          if ! command -v cmake &> /dev/null; then
+            brew install cmake
+          fi
 
-      - name: Scripti Yetkilendir ve Çalıştır
+      - name: Build Scriptini Calistir
         run: |
           chmod +x build.sh
-          # Hikari genelde özel toolchain ister, yoksa hata almamak için OFF tutuyoruz
-          # Ama altyapı ios ve arm64/arm64e için hazırlanıyor
+          # Ortam değişkenlerini script'e hazır veriyoruz
+          export TARGET_OS="ios"
+          export BUILD_TYPE="Release"
+          
+          # Scripti çalıştır (Hikari kapalı, CMake ile)
           ./build.sh -s cmake -t Release -h OFF -o ios
-
-      - name: Dylib'i Paketle ve Ver
+        
+      - name: Dylibleri Topla ve Yukle
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Baybars-Patch-Dylib
+          name: Baybars-Final-Dylib
           path: |
             release/ios/*.dylib
             release/ios/*.tar.gz
+            cmake-build-Release/*.dylib
