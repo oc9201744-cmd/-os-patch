@@ -3,8 +3,8 @@
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
 
-// --- DOBBY FONKSİYONLARINI MANUEL TANIMLAMA (Hata Almamak İçin) ---
-// Bu bölüm sayesinde "dobby.h bulunamadı" hatası imkansız hale gelir.
+// --- DOBBY FONKSİYONLARINI MANUEL TANIMLAMA ---
+// Artık dışarıdan dobby.h çağırmıyoruz, böylece derleyici hata veremez.
 extern "C" {
     int DobbyHook(void *address, void *replace_call, void **origin_call);
     int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
@@ -22,19 +22,16 @@ uintptr_t get_anogs_base() {
     return 0;
 }
 
-// --- Görsel Bildirim ---
+// --- Modern Görsel Bildirim (iOS 13+ Destekli) ---
 void baybars_alert(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject;
-                    break;
-                }
+        // KeyWindow uyarısını almamak için modern yöntemle pencereyi buluyoruz
+        for (UIWindowScene* scene in (NSArray<UIWindowScene*>*)[UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive) {
+                window = scene.windows.firstObject;
+                break;
             }
-        } else {
-            window = [UIApplication sharedApplication].keyWindow;
         }
         
         if (window && window.rootViewController) {
@@ -49,40 +46,41 @@ void baybars_alert(NSString *msg) {
 
 // --- ANALİZ HOOKLARI (bak 4.txt ve bak 6.txt kaynaklı) ---
 
-// Ofset: 0xF838C (Sistem Çağrısı Dispatcher)
+// Ofset: 0xF838C (Sistem Çağrısı Dispatcher - bak 6.txt)
 void *(*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
 void *new_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) {
     return NULL; 
 }
 
-// Ofset: 0xF012C (ACE Modül Başlatıcı)
+// Ofset: 0xF012C (ACE Modül Başlatıcı - bak 4.txt)
 void (*orig_sub_F012C)(void *a1);
 void new_sub_F012C(void *a1) {
     return;
 }
 
-// --- BYPASS BAŞLATICI ---
+// --- ANA MOTOR ---
 void start_baybars_bypass() {
     uintptr_t base = get_anogs_base();
     
     if (base != 0) {
-        // Dobby Fonksiyonlarını Kullanıyoruz
+        // Dobby Hook İşlemleri
         DobbyHook((void *)(base + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
         DobbyHook((void *)(base + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
 
-        // Ofset: 0xD3844 (NOP Patch)
+        // Ofset: 0xD3844 (NOP Patch - Önceki analizlerden)
         uint32_t nop_code = 0xD503201F;
         DobbyCodePatch((void *)(base + 0xD3844), (uint8_t *)&nop_code, 4);
 
-        baybars_alert(@"Baybars Dobby: Bypass Aktif Edildi! ✅");
+        baybars_alert(@"Baybars Dobby: Bypass Başarıyla Aktif! ✅");
     } else {
-        NSLog(@"[Baybars] Anogs Bulunamadı!");
+        NSLog(@"[Baybars] Hata: Anogs framework henüz yüklenmedi!");
     }
 }
 
-// Constructor
+// Constructor: Uygulama açıldığında çalışır
 __attribute__((constructor))
 static void initialize() {
+    // Jailbreak'siz cihazlarda frameworklerin yüklenmesi için 15 saniye bekliyoruz
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         start_baybars_bypass();
     });
