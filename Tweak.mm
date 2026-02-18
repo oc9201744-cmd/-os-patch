@@ -16,7 +16,7 @@
 #include <mach/vm_map.h>
 #include <mach-o/dyld.h>
 #include <libkern/OSCacheControl.h>
-#include <dispatch/dispatch.h> // HATAYI DÜZELTEN SATIR: Dispatch kütüphanesi
+#include <dispatch/dispatch.h> 
 
 // ============================================================
 // DOBBY MOTORU (Senin orijinal altyapın)
@@ -77,7 +77,7 @@ static int DobbyHook(void* target, void* replacement, void** p_original) {
 }
 
 // ============================================================
-// TSS / ACE / BYPASS FONKSİYONLARI (Hepsi Burada)
+// TSS / ACE BYPASS FONKSİYONLARI VE DEĞİŞKENLERİ
 // ============================================================
 
 static uintptr_t get_tss_base(void) {
@@ -91,40 +91,37 @@ static uintptr_t get_tss_base(void) {
     return 0;
 }
 
-// 1. ACE Başlatıcı Susturucu
-long long (*orig_sub_F012C)(void *a1);
+// Orijinal Fonksiyon Pointerları (Hataları önlemek için tanımlandı)
+static long long (*orig_sub_F012C)(void *a1);
+static void* (*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
+static void* (*orig_sub_7A19C)(void* a1, const char* tag, uint8_t* data, int flag);
+static void (*orig_sub_175E8)(uint64_t buf, int64_t str);
+static int (*orig_sub_175B8)(const char* key, void* data, int64_t len);
+static FILE* (*orig_fopen)(const char*, const char*);
+
+// HOOK FONKSİYONLARI
 long long hook_sub_F012C(void *a1) { return 0; }
 
-// 2. Sistem Dağıtıcı (Crash Engelleyici)
-void* (*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
 void* hook_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) {
     return orig_sub_F838C(a1, a2, a3, a4);
 }
 
-// 3. Root Alert Bypass
-void* (*orig_root_alert)(void*, const char*, uint8_t*, int);
-void* hook_root_alert(void* a1, const char* tag, uint8_t* data, int flag) {
+void* hook_sub_7A19C(void* a1, const char* tag, uint8_t* data, int flag) {
     if (tag && strstr(tag, "root_alert")) return NULL;
-    return orig_root_alert(a1, tag, data, flag);
+    return orig_sub_7A19C(a1, tag, data, flag);
 }
 
-// 4. Emulator Reporter
-void (*orig_sub_175E8)(uint64_t buf, int64_t str);
 void hook_sub_175E8(uint64_t buf, int64_t str) {
     const char* s = (const char*)str;
     if (s && strstr(s, "emulator")) return;
     orig_sub_175E8(buf, str);
 }
 
-// 5. Hash Validator
-int (*orig_sub_175B8)(const char* key, void* data, int64_t len);
 int hook_sub_175B8(const char* key, void* data, int64_t len) {
     if (key && strcmp(key, "hash2") == 0) return 0;
     return orig_sub_175B8(key, data, len);
 }
 
-// 6. Dosya Gizleme
-static FILE* (*orig_fopen)(const char*, const char*);
 FILE* hook_fopen(const char* path, const char* mode) {
     if (path && (strstr(path, "/Cydia") || strstr(path, "/jb") || strstr(path, "substrate"))) return NULL;
     return orig_fopen(path, mode);
@@ -136,18 +133,19 @@ FILE* hook_fopen(const char* path, const char* mode) {
 
 __attribute__((constructor))
 static void initialize_bypass(void) {
-    // 1. Sistem kütüphanesi hookları hemen atılır
+    // 1. Sistem kütüphanesi hemen hooklanır
     DobbyHook((void*)fopen, (void*)hook_fopen, (void**)&orig_fopen);
 
-    // 2. TSS Modülü için 5 saniye bekle (Hataları çözen blok yapısı)
+    // 2. ACE/TSS için 5 saniye bekle
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         
-        uintptr_t tss_base = get_tss_base(); // base'i blok içinde tanımlıyoruz
+        uintptr_t tss_base = get_tss_base();
         
         if (tss_base) {
+            // Hata veren kısımlar burada düzeltildi:
             DobbyHook((void*)(tss_base + 0xF012C), (void*)hook_sub_F012C, (void**)&orig_sub_F012C);
             DobbyHook((void*)(tss_base + 0xF838C), (void*)hook_sub_F838C, (void**)&orig_sub_F838C);
-            DobbyHook((void*)(tss_base + 0x7A19C), (void*)hook_sub_7A19C, (void**)&orig_sub_root_alert);
+            DobbyHook((void*)(tss_base + 0x7A19C), (void*)hook_sub_7A19C, (void**)&orig_sub_7A19C);
             DobbyHook((void*)(tss_base + 0x175E8), (void*)hook_sub_175E8, (void**)&orig_sub_175E8);
             DobbyHook((void*)(tss_base + 0x175B8), (void*)hook_sub_175B8, (void**)&orig_sub_175B8);
 
