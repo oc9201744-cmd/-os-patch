@@ -18,34 +18,16 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Setup Dobby
+      - name: Setup Dobby Source
         run: |
+          # Kütüphane indirmek yerine Dobby'yi içine çekiyoruz
+          git clone --depth 1 https://github.com/jmpews/Dobby.git dobby_src
           mkdir -p include
-          # DOĞRUDAN RELEASE LİNKİ (Bu link asla HTML inmez)
-          curl -Lk "https://github.com/jmpews/Dobby/releases/download/v1.0.0/libdobby.a" -o libdobby.a
-          curl -Lk "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
-          
-          # Doğrulama (Logda kütüphane olduğunu görmeliyiz)
-          file libdobby.a
+          cp dobby_src/include/dobby.h include/
 
       - name: Build Tweak
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
+          # Dobby'nin kaynak kodlarını doğrudan derleyeceğiz
           make all FINALPACKAGE=1
-
-      - name: Export Output
-        run: |
-          mkdir -p output
-          find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
-          if [ -f "output/BaybarsBypass.dylib" ]; then
-            echo "✅ Dylib BAŞARIYLA OLUŞTURULDU!"
-          else
-            echo "❌ Hata: Dylib dosyası bulunamadı!"
-            exit 1
-          fi
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: BaybarsBypass_Final
-          path: output/
