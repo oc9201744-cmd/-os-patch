@@ -1,17 +1,15 @@
-# Mimari ve Hedef Sürüm
+# Mimari ve iOS sürümü
 export ARCHS = arm64 arm64e
 export TARGET = iphone:clang:latest:14.0
 
-# Tweak İsmi (Senin verdiğin isim)
+# Proje adı
 TWEAK_NAME = BaybarsBypass
 
-# Derlenecek dosyalar (.mm kullandığın için .mm yazdık)
+# Derlenecek dosya
 $(TWEAK_NAME)_FILES = Tweak.mm
 
-# CMake ile oluşan kütüphaneyi bağlıyoruz
+# Dobby kütüphanesini ve header klasörünü tanıtıyoruz
 $(TWEAK_NAME)_LDFLAGS = ./libdobby.a
-
-# Include dizinlerini derleyiciye tanıtıyoruz (Hata almamak için kritik)
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -I. -I./include
 
 include $(THEOS)/makefiles/common.mk
