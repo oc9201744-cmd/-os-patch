@@ -18,35 +18,17 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Build Dobby (BepInEx)
+      - name: Setup Dobby Library (iOS Arm64/Arm64e)
         run: |
-          git clone --recursive https://github.com/BepInEx/Dobby.git dobby_src
-          cd dobby_src
-          mkdir build && cd build
-          
-          cmake .. -G Xcode \
-          -DCMAKE_SYSTEM_NAME=iOS \
-          -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-          -DDOBBY_GENERATE_SHARED=OFF \
-          -DDOBBY_DEBUG=OFF
-          
-          xcodebuild -configuration Release -target dobby -sdk iphoneos
-          
-          cd ../..
           mkdir -p include
-          
-          # Header dosyasını taşı
-          cp dobby_src/include/dobby.h include/
-          
-          # Kütüphaneyi bul ve ana dizine libdobby.a olarak taşı
-          # find komutu ile her ihtimale karşı tüm build klasörünü tarıyoruz
-          find dobby_src/build -name "*.a" -exec cp {} ./libdobby.a \;
+          # iOS için özel derlenmiş libdobby.a ve header dosyasını indiriyoruz
+          curl -Lk "https://github.com/m4fn3/Dobby/releases/download/v1.0.0/libdobby.a" -o libdobby.a
+          curl -Lk "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
           
           if [ -f "./libdobby.a" ]; then
-            echo "✅ libdobby.a başarıyla hazırlandı."
+            echo "✅ Dobby kütüphanesi hazır."
           else
-            echo "❌ Hata: libdobby.a bulunamadı!"
+            echo "❌ Kütüphane indirilemedi!"
             exit 1
           fi
 
@@ -54,20 +36,19 @@ jobs:
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # 'make all' kullanarak paketleme (deb) hatalarını atlıyoruz, sadece dylib odaklıyız
+          # Paketleme hatası almamak için sadece dylib üretelim
           make all FINALPACKAGE=1 CODESIGN_IPA=0 AD_HOC=1
         continue-on-error: true
 
       - name: Export Output
         run: |
           mkdir -p output
-          # Derlenen dylib'i bul ve kopyala
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           
           if [ -f "output/BaybarsBypass.dylib" ]; then
-            echo "✅ Dylib başarıyla oluşturuldu."
+            echo "✅ Bypass başarıyla oluşturuldu."
           else
-            echo "❌ Hata: Dylib dosyası üretilemedi. Makefile veya Tweak.xm kontrol edilmeli."
+            echo "❌ Hata: Dylib dosyası üretilemedi!"
             exit 1
           fi
 
