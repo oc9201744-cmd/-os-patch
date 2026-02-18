@@ -20,23 +20,30 @@ jobs:
 
       - name: Build Dobby with CMake
         run: |
-          # 1. Dobby'yi çek
+          # 1. Dobby reposunu çek
           git clone --recursive --depth 1 https://github.com/jmpews/Dobby.git dobby_src
           cd dobby_src
+          
+          # 2. Hata veren kontrol dosyasını devre dışı bırak (Sed ile bypass)
+          sed -i '' 's/include(Cmake\/build_environment_check.cmake)//g' CMakeLists.txt
+          
+          # 3. Build klasörü oluştur
           mkdir build && cd build
           
-          # 2. CMake ile iOS için yapılandır (Senin istediğin komutun en stabil hali)
+          # 4. CMake yapılandırması (Spesifik ARM64 ayarlarıyla)
           cmake .. -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
+            -DCMAKE_SYSTEM_PROCESSOR=arm64 \
+            -DDOBBY_GENERIC_ARM64=ON \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
             -DBUILD_SHARED_LIBS=OFF \
             -DDOBBY_DEBUG=OFF
           
-          # 3. Xcode ile derle
+          # 5. Xcode ile kütüphaneyi derle
           xcodebuild -configuration Release -scheme dobby -sdk iphoneos
           
-          # 4. Çıkan kütüphaneyi ve headerları ana dizine taşı
+          # 6. Kütüphaneyi ve Header'ları Theos'un göreceği yere taşı
           cp Release-iphoneos/libdobby.a ../../
           cp -r ../include ../../
 
@@ -44,9 +51,10 @@ jobs:
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
+          # Theos ile asıl tweak'i derle
           make all FINALPACKAGE=1
 
-      - name: Upload Dylib
+      - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
           name: BaybarsBypass_Final
