@@ -1,123 +1,120 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <dlfcn.h>
-#include <sys/types.h>
-#include <sys/sysctl.h>
-#include <sys/stat.h>
-#include <sys/mman.h>
-#include <pthread.h>
-#include <mach/mach.h>
-#include <mach-o/dyld.h>
-#include <dispatch/dispatch.h>
+#import <Foundation/Foundation.h>
+#import <mach-o/dyld.h>
+#import <dlfcn.h>
+#import <UIKit/UIKit.h>
+#include <sys/socket.h>
 
-// ============================================================
-// DOBBY MOTORU & YARDIMCI FONKSİYONLAR
-// ============================================================
-typedef struct {
-    void* target; void* replacement; void** original;
-    uint8_t backup[16]; void* trampoline;
-} HookEntry;
+// --- DOBBY EXTERNAL ---
+extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
 
-#define MAX_HOOKS 128
-static HookEntry g_hooks[MAX_HOOKS];
-static int g_hook_count = 0;
-static pthread_mutex_t g_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
+// --- [8] ANALİZ TABLOSUNDAKİ TÜM OFSETLER ---
+#define OFS_ANTI_SP2S      0x5D7C
+#define OFS_ROOT_ALERT     0x63D4
+#define OFS_HASH2          0x30028
+#define OFS_HB_CHECK       0x447B0
+#define OFS_CHEAT_DETECT   0x4A130
+#define OFS_SC_PROTECT     0x7B2A8
+#define OFS_SCREENSHOT     0x7BD90
+#define OFS_HASH_CACHE     0x7C920
+#define OFS_FLOW_CTL       0x7FC44
+#define OFS_TCJ_PROTECT    0x815C4
+#define OFS_APP_VERIFY     0x81C08
+#define OFS_HB_LOOP        0x85F5C
+#define OFS_SPEED_CTL      0x94630
+#define OFS_ANTI_DATA      0x1007FC
 
-static void emit_arm64_branch(void* from, void* to) {
-    uint32_t* code = (uint32_t*)from;
-    code[0] = 0x58000050; // LDR X16, [PC, #8]
-    code[1] = 0xD61F0200; // BR X16
-    *(uint64_t*)&code[2] = (uint64_t)to;
-}
+// --- ORİJİNAL POINTERLAR (Eskileri saklamak için) ---
+static void* (*orig_root_alert)(void*);
+static void  (*orig_hbcheck)(void*);
+static void  (*orig_cheat_detect)(void);
+static int   (*orig_sc_protect)(void*, void*, int, void*);
+static int   (*orig_tcj_protect)(void*, void*, void*, void*, void*, void*);
+static void  (*orig_speed_ctl)(void*);
+static void  (*orig_screenshot)(void);
+static int   (*orig_hash2)(void);
+static int   (*orig_hash_cache)(void);
+static void  (*orig_hb_loop)(void);
+static int   (*orig_appver)(void);
+static int   (*orig_flow_ctl)(void);
+static void  (*orig_antidata)(void);
+static ssize_t (*orig_send)(int, const void*, size_t, int);
 
-static bool set_mem_permission(void* addr, size_t size) {
-    uintptr_t page = (uintptr_t)addr & ~(0x4000 - 1);
-    size_t len = (uintptr_t)addr - page + size;
-    len = (len + 0x3FFF) & ~0x3FFF;
-    kern_return_t kr = vm_protect(mach_task_self(), (vm_address_t)page, (vm_size_t)len, false, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
-    return kr == KERN_SUCCESS;
-}
+// --- BYPASS HANDLERS (Osub Hosub Mantığı) ---
 
-static void* create_trampoline(void* target, size_t backup_size) {
-    void* tramp = mmap(NULL, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS | MAP_JIT, -1, 0);
-    if (tramp == MAP_FAILED) return NULL;
-    memcpy(tramp, target, backup_size);
-    emit_arm64_branch((uint8_t*)tramp + backup_size, (uint8_t*)target + backup_size);
-    return tramp;
-}
+void* fake_root_alert(void* arg) { return NULL; } // Root'u sustur
+void  fake_hbcheck(void* self) { return; }        // Heartbeat'i durdur
+void  fake_cheat_detect() { return; }             // Hile taramayı atla
+int   fake_sc_protect(void* a, void* b, int c, void* d) { return 0; } // SC Abort engelle
+int   fake_tc_protect(void* a, void* b, void* c, void* d, void* e, void* f) { return 0; }
+void  fake_speed_ctl(void* self) { return; }      // Hız kontrolünü boz
+void  fake_screenshot() { return; }               // SS kontrolünü kör et
+int   fake_hash(void) { return 0; }               // Hash kontrollerini geç
+void  fake_void_ret() { return; }                 // Genel void dönüşler
 
-static int DobbyHook(void* target, void* replacement, void** p_original) {
-    pthread_mutex_lock(&g_hook_mutex);
-    if (g_hook_count >= MAX_HOOKS || !target) { pthread_mutex_unlock(&g_hook_mutex); return -1; }
-    void* tramp = create_trampoline(target, 16);
-    if (p_original) *p_original = tramp;
-    if (set_mem_permission(target, 16)) {
-        emit_arm64_branch(target, replacement);
-        g_hook_count++;
+// Network Filtresi (Analiz 9: Ban Kodlarını (0x7382, 0x0011) Filtreler)
+ssize_t hook_send(int sockfd, const void *buf, size_t len, int flags) {
+    if (buf && len > 0) {
+        const char* d = (const char*)buf;
+        if (strstr(d, "root_alert") || strstr(d, "cheat_open_id") || strstr(d, "tcj_ss_error")) {
+            NSLog(@"[OSUB-HOSUB] KRİTİK BAN RAPORU ENGELLENDİ!");
+            return len; 
+        }
     }
-    pthread_mutex_unlock(&g_hook_mutex);
-    return 0;
+    return orig_send(sockfd, buf, len, flags);
 }
 
-static uintptr_t get_tss_base() {
+// --- ENGINE ---
+
+static uintptr_t get_mrpcs_base() {
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
         const char* name = _dyld_get_image_name(i);
-        if (name && (strstr(name, "tersafe") || strstr(name, "AntiCheat"))) 
+        if (name && (strstr(name, "tersafe") || strstr(name, "AntiCheat") || strstr(name, "libtprt") || strstr(name, "MRPCS"))) {
             return (uintptr_t)_dyld_get_image_header(i);
+        }
     }
     return 0;
 }
 
-// ============================================================
-// HOOKS & BYPASS LOGIC
-// ============================================================
+void setup_all_hooks() {
+    uintptr_t base = get_mrpcs_base();
+    if (!base) return;
 
-static long long (*orig_sub_F012C)(void *a1);
-long long hook_sub_F012C(void *a1) { return 0; }
+    NSLog(@"[BAYBARS V10] TÜM ANALİZ NOKTALARI HOOKLANIYOR...");
 
-static int (*orig_sub_175B8)(const char* key, void* data, int64_t len);
-int hook_sub_175B8(const char* key, void* data, int64_t len) {
-    if (key && strstr(key, "hash")) return 0;
-    return orig_sub_175B8(key, data, len);
+    // Analizdeki tüm adresleri Dobby ile osub hosub yapıyoruz:
+    DobbyHook((void*)(base + OFS_ROOT_ALERT), (void*)fake_root_alert, (void**)&orig_root_alert);
+    DobbyHook((void*)(base + OFS_HB_CHECK), (void*)fake_hbcheck, (void**)&orig_hbcheck);
+    DobbyHook((void*)(base + OFS_CHEAT_DETECT), (void*)fake_cheat_detect, (void**)&orig_cheat_detect);
+    DobbyHook((void*)(base + OFS_SC_PROTECT), (void*)fake_sc_protect, (void**)&orig_sc_protect);
+    DobbyHook((void*)(base + OFS_SCREENSHOT), (void*)fake_screenshot, (void**)&orig_screenshot);
+    DobbyHook((void*)(base + OFS_TCJ_PROTECT), (void*)fake_tc_protect, (void**)&orig_tcj_protect);
+    DobbyHook((void*)(base + OFS_SPEED_CTL), (void*)fake_speed_ctl, (void**)&orig_speed_ctl);
+    DobbyHook((void*)(base + OFS_HASH2), (void*)fake_hash, (void**)&orig_hash2);
+    DobbyHook((void*)(base + OFS_HASH_CACHE), (void*)fake_hash, (void**)&orig_hash_cache);
+    DobbyHook((void*)(base + OFS_HB_LOOP), (void*)fake_void_ret, (void**)&orig_hb_loop);
+    DobbyHook((void*)(base + OFS_APP_VERIFY), (void*)fake_hash, (void**)&orig_appver);
+    DobbyHook((void*)(base + OFS_FLOW_CTL), (void*)fake_hash, (void**)&orig_flow_ctl);
+    DobbyHook((void*)(base + OFS_ANTI_DATA), (void*)fake_void_ret, (void**)&orig_antidata);
+
+    // Sistem Seviyesi Hook
+    void* send_ptr = dlsym(RTLD_DEFAULT, "send");
+    if (send_ptr) DobbyHook(send_ptr, (void*)hook_send, (void**)&orig_send);
+
+    // UIKit Onayı
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BAYBARS V10" 
+                                                                       message:@"Analizdeki Tüm 14 Nokta Hooklandı!\n(Osub Hosub Aktif)" 
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:NULL]];
+        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:NULL];
+    });
 }
-
-static void* (*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
-void* hook_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) {
-    return orig_sub_F838C(a1, a2, a3, a4);
-}
-
-// ============================================================
-// CONSTRUCTOR & LOG BASMA
-// ============================================================
 
 __attribute__((constructor))
-static void init_master_bypass() {
-    // 8 saniye sonra modülleri yamala ve yazıyı bas
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 8 * NSEC_PER_SEC), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
-        uintptr_t base = get_tss_base();
-        if (base) {
-            DobbyHook((void*)(base + 0xF012C), (void*)hook_sub_F012C, (void**)&orig_sub_F012C);
-            DobbyHook((void*)(base + 0x175B8), (void*)hook_sub_175B8, (void**)&orig_sub_175B8);
-            DobbyHook((void*)(base + 0xF838C), (void*)hook_sub_F838C, (void**)&orig_sub_F838C);
-            
-            uint32_t nop = 0xD503201F;
-            if (set_mem_permission((void *)(base + 0xD3844), 4)) {
-                memcpy((void *)(base + 0xD3844), &nop, 4);
-            }
-
-            // --- BYPASS AKTİF YAZISI ---
-            printf("\n\n[BYPASS] ===================================\n");
-            printf("[BYPASS] TSS/ACE MODÜLÜ BULUNDU: 0x%lx\n", base);
-            printf("[BYPASS] TÜM HOOKLAR BAŞARIYLA ATILDI!\n");
-            printf("[BYPASS] BAYBARS V5 AKTİF DURUMDA!\n");
-            printf("[BYPASS] ===================================\n\n");
-            
-        } else {
-            printf("[BYPASS] HATA: AntiCheat modülü bulunamadı!\n");
-        }
+static void initialize() {
+    // SDK'nın tam yüklenmesi için 15 saniye bekle (Analizdeki threadlerin başlaması için önemli)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        setup_all_hooks();
     });
 }
