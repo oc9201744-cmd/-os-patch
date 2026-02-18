@@ -1,34 +1,35 @@
-name: Baybars Bypass Build
+name: Baybars-Build-Engine
 
 on:
-  push:
-    branches: [ main, master ]
-  workflow_dispatch:
+  workflow_dispatch: # Butona basınca çalıştır
 
 jobs:
-  build:
+  build-ios:
     runs-on: macos-latest
+    
     steps:
-      - name: Checkout Repository
+      - name: Repoyu Çek
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Set up Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-
-      - name: Build Tweak
+      - name: Bağımlılıkları Kur
         run: |
-          # libdobby.a'nın ana dizinde olduğundan emin ol
-          clang++ -arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
-          -miphoneos-version-min=14.0 \
-          -dynamiclib \
-          -framework Foundation \
-          -framework UIKit \
-          -lc++ \
-          Tweak.mm ./libdobby.a \
-          -o BaybarsBypass.dylib
+          brew install cmake
+          # SDK yollarını doğrula
+          sudo xcode-select -s /Applications/Xcode_15.2.app
 
-      - name: Upload Artifact
+      - name: Scripti Yetkilendir ve Çalıştır
+        run: |
+          chmod +x build.sh
+          # Hikari genelde özel toolchain ister, yoksa hata almamak için OFF tutuyoruz
+          # Ama altyapı ios ve arm64/arm64e için hazırlanıyor
+          ./build.sh -s cmake -t Release -h OFF -o ios
+
+      - name: Dylib'i Paketle ve Ver
         uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass-Dylib
-          path: BaybarsBypass.dylib
+          name: Baybars-Patch-Dylib
+          path: |
+            release/ios/*.dylib
+            release/ios/*.tar.gz
