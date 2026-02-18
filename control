@@ -3,7 +3,7 @@ Name: BaybarsBypass
 Depends: mobilesubstrate
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Android Logic Return 0 Hook for iOS 17
+Description: Anogs Framework Memory Patch for Non-Jailbreak.
 Maintainer: Baybars
 Author: Baybars
 Section: Tweaks
