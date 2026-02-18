@@ -1,60 +1,46 @@
-#import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#import <mach-o/dyld.h>
-#include <substrate.h>
+name: Baybars Auto Builder
 
-// --- BAYBARS GÜNCEL ANONS (iOS 17/18 FIX) ---
-void BaybarsMesaj(NSString *msg) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        // Yeni nesil iOS'larda keyWindow yerine Scene kontrolü
-        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
-                window = ((UIWindowScene *)scene).windows.firstObject;
-                break;
-            }
-        }
-        
-        if (!window) return;
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
-        UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 300, 50)];
-        l.center = CGPointMake(window.frame.size.width / 2, 120);
-        l.text = msg;
-        l.textColor = [UIColor yellowColor];
-        l.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-        l.textAlignment = NSTextAlignmentCenter;
-        l.font = [UIFont boldSystemFontOfSize:15];
-        l.layer.cornerRadius = 12;
-        l.clipsToBounds = YES;
-        [window addSubview:l];
-        
-        [UIView animateWithDuration:0.5 delay:5.0 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL f){ [l removeFromSuperview]; }];
-    });
-}
+jobs:
+  build:
+    runs-on: macos-latest
 
-// --- ANDROID LOGIC HOOKS ---
-int (*old_sub_2DF68)(void *a1, void *a2, void *a3);
-int new_sub_2DF68(void *a1, void *a2, void *a3) {
-    return 0; // Return 0 kanka!
-}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-int (*old_sub_F806C)(void *a1);
-int new_sub_F806C(void *a1) {
-    return 0; 
-}
+      - name: Setup Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          echo "THEOS=~/theos" >> $GITHUB_ENV
 
-void setupHooks() {
-    uintptr_t slide = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
-    
-    MSHookFunction((void *)(slide + 0x2DF68), (void *)&new_sub_2DF68, (void **)&old_sub_2DF68);
-    MSHookFunction((void *)(slide + 0xF806C), (void *)&new_sub_F806C, (void **)&old_sub_F806C);
+      - name: Download iOS SDK
+        run: |
+          git clone --quiet https://github.com/theos/sdks.git ~/theos/sdks
 
-    BaybarsMesaj(@"Baybars: iOS 17/18 Hook Aktif!");
-}
+      - name: Compile Tweak
+        run: |
+          export THEOS=~/theos
+          make clean
+          make package FINALPACKAGE=1
+          
+      - name: Extract Dylib
+        run: |
+          mkdir -p output
+          if [ -d "packages" ]; then
+            find packages/*.deb -exec dpkg-deb -x {} temp_deb \;
+            find temp_deb -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
+          else
+            echo "DEB dosyasi bulunamadi!"
+            exit 1
+          fi
 
-__attribute__((constructor))
-static void initialize() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        setupHooks();
-    });
-}
+      - name: Upload Dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: Baybars-Dylib
+          path: output/BaybarsBypass.dylib
