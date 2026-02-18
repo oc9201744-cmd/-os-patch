@@ -20,15 +20,16 @@ jobs:
 
       - name: Setup Dobby Library
         run: |
-          mkdir -p include
-          # iOS için hazır derlenmiş Dobby ve Header indir
-          curl -Lk "https://github.com/m4fn3/Dobby/releases/download/v1.0.0/libdobby.a" -o libdobby.a
-          curl -Lk "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
+          # Dobby kütüphanesini GitHub'ın ham (raw) içeriğinden çekiyoruz
+          # Bu kütüphane arm64 ve arm64e (Universal) desteklidir.
+          curl -Lk "https://github.com/m4fn3/Dobby/raw/master/builtin-plugin/ApplicationEventMonitor/libdobby.a" -o libdobby.a
           
-          if [ -f "./libdobby.a" ]; then
-            echo "✅ Dobby kütüphanesi hazır."
+          # Dosyanın gerçekten bir kütüphane olup olmadığını kontrol et
+          if file libdobby.a | grep -q "current ar archive"; then
+            echo "✅ libdobby.a başarıyla doğrulandı."
           else
-            echo "❌ Hata: libdobby.a indirilemedi!"
+            echo "❌ Hata: libdobby.a bozuk veya yanlış formatta!"
+            file libdobby.a
             exit 1
           fi
 
@@ -36,24 +37,22 @@ jobs:
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # 'all' kullanarak sadece dylib üretimine odaklanıyoruz
-          # Hata olursa burada duracak ve bize nedenini söyleyecek
+          # Sadece dylib üretimi
           make all FINALPACKAGE=1 CODESIGN_IPA=0 AD_HOC=1
 
       - name: Export Output
         run: |
           mkdir -p output
-          # Derlenen dylib dosyasını bulup taşıyoruz
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           
           if [ -f "output/BaybarsBypass.dylib" ]; then
-            echo "✅ Bypass başarıyla oluşturuldu."
+            echo "✅ Dylib başarıyla oluşturuldu!"
           else
-            echo "❌ Hata: Dylib dosyası üretilemedi! Tweak.xm veya Makefile kontrol edilmeli."
+            echo "❌ Hata: Dylib dosyası bulunamadı!"
             exit 1
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass_Dobby
+          name: BaybarsBypass_Final
           path: output/
