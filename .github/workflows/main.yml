@@ -24,8 +24,7 @@ jobs:
           clang++ \
           -std=c++17 \
           -dynamiclib \
-          Tweak.mm \
-          dobby.cpp \
+          -dobby.cpp \
           -o Tweak.dylib \
           -isysroot $SDK \
           -framework UIKit \
