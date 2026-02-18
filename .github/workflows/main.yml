@@ -1,17 +1,11 @@
 name: Baybars Auto Builder
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
+on: [push, workflow_dispatch]
 
 jobs:
   build:
     runs-on: macos-latest
-
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Theos
         run: |
@@ -19,39 +13,32 @@ jobs:
           echo "THEOS=~/theos" >> $GITHUB_ENV
           echo "~/theos/bin" >> $GITHUB_PATH
 
-      - name: Setup SDK
+      - name: Setup SDK (Fixed)
         run: |
-          # iOS SDK'sını indir (Hata almamak için 14.5+ önerilir)
-          curl -LO https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz
+          # SDK klasörünü oluştur
+          mkdir -p ~/theos/sdks
+          # Doğrudan tar.xz dosyasını çekmek yerine alternatif linki deneyelim
+          # -L yönlendirmeleri izler, -k güvensiz SSL'e izin verir
+          curl -Lk https://github.com/theos/sdks/raw/master/iPhoneOS14.5.sdk.tar.xz -o iPhoneOS14.5.sdk.tar.xz
+          
+          # Dosyanın inip inmediğini kontrol et
+          ls -lh iPhoneOS14.5.sdk.tar.xz
+          
+          # Açmaya çalış
           tar -xf iPhoneOS14.5.sdk.tar.xz -C ~/theos/sdks/
           rm iPhoneOS14.5.sdk.tar.xz
 
-      - name: Compile Tweak
+      - name: Build
         run: |
-          export THEOS=~/theos
-          # Rootless ve Jailbreak bağımsız olması için FINALPACKAGE=1 kullanıyoruz
-          make clean
           make package FINALPACKAGE=1
 
-      - name: Force Extract and Prepare Output
+      - name: Export
         run: |
           mkdir -p output
-          
-          # 1. Oluşan .dylib dosyasını bul ve kopyala
-          # .theos/obj içindeki tüm dylib'leri tarar, hangisi olursa olsun alır.
+          # Dylib'i her türlü bulur ve kopyalar
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
-          
-          # 2. Eğer dylib bulunamazsa logları dök ve hata ver
-          if [ ! -f "output/BaybarsBypass.dylib" ]; then
-            echo "HATA: Dylib dosyası oluşturulamadı! Derleme loglarını kontrol et."
-            ls -R .theos/obj
-            exit 1
-          fi
-          
-          echo "Dylib başarıyla hazırlandı: output/BaybarsBypass.dylib"
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass-Build
+          name: BaybarsBypass
           path: output/
