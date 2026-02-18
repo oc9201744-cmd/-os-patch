@@ -3,7 +3,6 @@
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
 
-// --- DOBBY ---
 extern "C" {
     int DobbyHook(void *address, void *replace_call, void **origin_call);
 }
@@ -22,8 +21,8 @@ void baybars_alert(NSString *msg) {
         }
         if (!window) window = [UIApplication sharedApplication].windows.firstObject;
         if (window && window.rootViewController) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v11" message:msg preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Gazla!" style:UIAlertActionStyleDefault handler:nil]];
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v12" message:msg preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
             UIViewController *top = window.rootViewController;
             while (top.presentedViewController) top = top.presentedViewController;
             [top presentViewController:alert animated:YES completion:nil];
@@ -31,74 +30,73 @@ void baybars_alert(NSString *msg) {
     });
 }
 
-// --- ANALİZDEN GELEN TÜM OFSETLER (OSUB HOSUB) ---
-#define OFS_ROOT_ALERT     0x63D4
-#define OFS_HASH2          0x30028
-#define OFS_HB_CHECK       0x447B0
-#define OFS_CHEAT_DETECT   0x4A130
-#define OFS_SC_PROTECT     0x7B2A8
-#define OFS_SCREENSHOT     0x7BD90
-#define OFS_TCJ_PROTECT    0x815C4
-#define OFS_SPEED_CTL      0x94630
-#define OFS_ANTI_DATA      0x1007FC
-#define OFS_ABORT_DECISION 0xF0CBC
+// --- ORIG POINTERS ---
+static void* (*orig_root)(void*);
+static int   (*orig_sc)(void*, void*, int, void*);
+static int   (*orig_tcj)(void*, void*, void*, void*, void*, void*);
+static int   (*orig_hash2)(void);
 
-// --- BYPASS HANDLERS ---
-void* fake_null(void* a) { return NULL; }
-void  fake_void() { return; }
-int   fake_zero() { return 0; }
-int   fake_sc(void* a, void* b, int c, void* d) { return 0; }
-int   fake_tc(void* a, void* b, void* c, void* d, void* e, void* f) { return 0; }
+// --- SAFE HOOK HANDLERS (v4 Mantığı: Orijinali Çalıştır, Sonucu Temizle) ---
 
-// --- ANA MOTOR (SIRALI YAMA) ---
-void apply_full_bypass(uintptr_t base) {
-    // 15 saniye sonra başla (Modülün içindeki threadlerin oturması için)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+void* new_root_alert(void* arg) {
+    orig_root(arg); // Orijinali çalıştır (Thread bozulmasın)
+    return NULL;    // Ama raporu boş dön
+}
+
+int new_sc_protect(void* a, void* b, int c, void* d) {
+    orig_sc(a, b, c, d); // Bütünlük kontrolü çalışsın
+    return 0;            // Ama hata (Abort) kodunu 0 (başarılı) yap
+}
+
+int new_tcj_protect(void* x0, void* x1, void* x2, void* x3, void* x4, void* x5) {
+    orig_tcj(x0, x1, x2, x3, x4, x5);
+    return 0; // Tencent korumasını her zaman "ok" döndür
+}
+
+int new_hash2() {
+    orig_hash2();
+    return 0; // Hash sonucunu temizle
+}
+
+// --- ANA MOTOR ---
+void apply_crash_safe_bypass(uintptr_t base) {
+    // 20 saniye bekleme (v4'teki gibi, en güvenli süre)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         
         if (base == 0) return;
 
-        // Her yamadan sonra kısa bir es vererek Integrity Check'i (Bütünlük Kontrolü) bypass ediyoruz
-        
-        // 1. Root & Jailbreak
-        DobbyHook((void *)(base + OFS_ROOT_ALERT), (void *)fake_null, NULL);
-        [NSThread sleepForTimeInterval:0.5];
+        // Analizindeki en kritik 4 noktayı v4 mantığıyla hookluyoruz
+        // 1. Root Alert
+        DobbyHook((void *)(base + 0x63D4), (void *)new_root_alert, (void **)&orig_root);
+        [NSThread sleepForTimeInterval:1.5];
 
-        // 2. Heartbeat & Hile Tespiti
-        DobbyHook((void *)(base + OFS_HB_CHECK), (void *)fake_void, NULL);
-        DobbyHook((void *)(base + OFS_CHEAT_DETECT), (void *)fake_void, NULL);
-        [NSThread sleepForTimeInterval:0.5];
+        // 2. SC Protect (Crash'in ana sebebi buydu, artık güvenli)
+        DobbyHook((void *)(base + 0x7B2A8), (void *)new_sc_protect, (void **)&orig_sc);
+        [NSThread sleepForTimeInterval:1.5];
 
-        // 3. Integrity & Hash
-        DobbyHook((void *)(base + OFS_SC_PROTECT), (void *)fake_sc, NULL);
-        DobbyHook((void *)(base + OFS_HASH2), (void *)fake_zero, NULL);
-        [NSThread sleepForTimeInterval:0.5];
+        // 3. Hash2
+        DobbyHook((void *)(base + 0x30028), (void *)new_hash2, (void **)&orig_hash2);
+        [NSThread sleepForTimeInterval:1.5];
 
-        // 4. Diğer Koruma Noktaları
-        DobbyHook((void *)(base + OFS_TCJ_PROTECT), (void *)fake_tc, NULL);
-        DobbyHook((void *)(base + OFS_SPEED_CTL), (void *)fake_void, NULL);
-        DobbyHook((void *)(base + OFS_SCREENSHOT), (void *)fake_void, NULL);
-        DobbyHook((void *)(base + OFS_ANTI_DATA), (void *)fake_void, NULL);
-        DobbyHook((void *)(base + OFS_ABORT_DECISION), (void *)fake_zero, NULL);
+        // 4. TCJ Protect
+        DobbyHook((void *)(base + 0x815C4), (void *)new_tcj_protect, (void **)&orig_tcj);
 
-        baybars_alert(@"Osub Hosub Tamamlandı! Tüm Noktalar Hooklandı. ✅");
+        baybars_alert(@"Baybars v12: Safe Bypass Aktif! 🚀");
     });
 }
 
-// --- DİNAMİK MODÜL YAKALAYICI ---
 void image_added_callback(const struct mach_header *mh, intptr_t vmaddr_slide) {
     Dl_info info;
     if (dladdr(mh, &info)) {
         const char *name = info.dli_fname;
-        // Analizindeki modül isimlerine göre arama (Anogs veya libtprt vb.)
-        if (name && (strstr(name, "Anogs") || strstr(name, "anogs") || strstr(name, "MRPCS") || strstr(name, "libtprt"))) {
-            // Modülün hafızadaki gerçek base adresi vmaddr_slide (ASLR) değeridir.
-            apply_full_bypass((uintptr_t)vmaddr_slide);
+        // Analizindeki "Anogs" modülünü v4 gibi yakalıyoruz
+        if (name && (strstr(name, "Anogs") || strstr(name, "anogs"))) {
+            apply_crash_safe_bypass((uintptr_t)vmaddr_slide);
         }
     }
 }
 
 __attribute__((constructor))
 static void initialize() {
-    // Çalışan kodun kalbi: Modül hafızaya girdiği anı izle
     _dyld_register_func_for_add_image(image_added_callback);
 }
