@@ -3,95 +3,81 @@
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
 
-extern "C" {
-    int DobbyHook(void *address, void *replace_call, void **origin_call);
-}
+// --- DOBBY ---
+extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
+
+// --- TRAMPOLINE SAKLAYICILAR ---
+// Analizdeki en kritik noktalar için orijinal köprüleri hazırlıyoruz
+static void* (*orig_root_ptr)(void*);
+static int   (*orig_sc_ptr)(void*, void*, int, void*);
+static int   (*orig_hash_ptr)(void);
+static int   (*orig_abort_ptr)(void*);
 
 // --- UI BİLDİRİM ---
 void baybars_alert(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* scene in (NSArray<UIWindowScene*>*)[UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive) {
-                    window = scene.windows.firstObject;
-                    break;
-                }
-            }
-        }
+        UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (!window) window = [UIApplication sharedApplication].windows.firstObject;
-        if (window && window.rootViewController) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v12" message:msg preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-            UIViewController *top = window.rootViewController;
-            while (top.presentedViewController) top = top.presentedViewController;
-            [top presentViewController:alert animated:YES completion:nil];
-        }
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v14" message:msg preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Gazla!" style:UIAlertActionStyleDefault handler:nil]];
+        [window.rootViewController presentViewController:alert animated:YES completion:nil];
     });
 }
 
-// --- ORIG POINTERS ---
-static void* (*orig_root)(void*);
-static int   (*orig_sc)(void*, void*, int, void*);
-static int   (*orig_tcj)(void*, void*, void*, void*, void*, void*);
-static int   (*orig_hash2)(void);
+// --- TRAMPOLINE HANDLERS (Orijinale Köprü Atanlar) ---
 
-// --- SAFE HOOK HANDLERS (v4 Mantığı: Orijinali Çalıştır, Sonucu Temizle) ---
-
-void* new_root_alert(void* arg) {
-    orig_root(arg); // Orijinali çalıştır (Thread bozulmasın)
-    return NULL;    // Ama raporu boş dön
+void* trampoline_root(void* arg) {
+    // Önce orijinal akışı çalıştır (Trampoline köprüsü üzerinden)
+    orig_root_ptr(arg);
+    // Ama sonucu temiz döndürerek raporu iptal et
+    return NULL;
 }
 
-int new_sc_protect(void* a, void* b, int c, void* d) {
-    orig_sc(a, b, c, d); // Bütünlük kontrolü çalışsın
-    return 0;            // Ama hata (Abort) kodunu 0 (başarılı) yap
+int trampoline_sc(void* a, void* b, int c, void* d) {
+    // Orijinal bütünlük kontrolü fonksiyonunu çalıştır
+    orig_sc_ptr(a, b, c, d);
+    // Oyunun beklediği 'temiz' sonucunu (0) dön
+    return 0;
 }
 
-int new_tcj_protect(void* x0, void* x1, void* x2, void* x3, void* x4, void* x5) {
-    orig_tcj(x0, x1, x2, x3, x4, x5);
-    return 0; // Tencent korumasını her zaman "ok" döndür
+int trampoline_abort(void* a1) {
+    // Bu fonksiyon çağrıldığında orijinali hiç çağırma! 
+    // Çünkü burası cellat fonksiyonu (0xF0CBC). Direkt 0 dönerek ölümü engelle.
+    return 0;
 }
 
-int new_hash2() {
-    orig_hash2();
-    return 0; // Hash sonucunu temizle
-}
-
-// --- ANA MOTOR ---
-void apply_crash_safe_bypass(uintptr_t base) {
-    // 20 saniye bekleme (v4'teki gibi, en güvenli süre)
+// --- ANA MOTOR (SIRALI TRAMPOLINE KURULUMU) ---
+void apply_trampoline_bypass(uintptr_t base) {
+    // v4'teki gibi 20 saniye güvenli bekleme
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         
         if (base == 0) return;
 
-        // Analizindeki en kritik 4 noktayı v4 mantığıyla hookluyoruz
-        // 1. Root Alert
-        DobbyHook((void *)(base + 0x63D4), (void *)new_root_alert, (void **)&orig_root);
-        [NSThread sleepForTimeInterval:1.5];
+        // 1. Hook: Root Alert (Analiz: 0x63D4)
+        DobbyHook((void *)(base + 0x63D4), (void *)trampoline_root, (void **)&orig_root_ptr);
+        
+        [NSThread sleepForTimeInterval:1.0];
 
-        // 2. SC Protect (Crash'in ana sebebi buydu, artık güvenli)
-        DobbyHook((void *)(base + 0x7B2A8), (void *)new_sc_protect, (void **)&orig_sc);
-        [NSThread sleepForTimeInterval:1.5];
+        // 2. Hook: SC Protect (Analiz: 0x7B2A8)
+        DobbyHook((void *)(base + 0x7B2A8), (void *)trampoline_sc, (void **)&orig_sc_ptr);
 
-        // 3. Hash2
-        DobbyHook((void *)(base + 0x30028), (void *)new_hash2, (void **)&orig_hash2);
-        [NSThread sleepForTimeInterval:1.5];
+        [NSThread sleepForTimeInterval:1.0];
 
-        // 4. TCJ Protect
-        DobbyHook((void *)(base + 0x815C4), (void *)new_tcj_protect, (void **)&orig_tcj);
+        // 3. Hook: Abort Kararı (Analiz: 0xF0CBC)
+        // En kritik Trampoline burası; oyunun kapanma emrini burada emiyoruz.
+        DobbyHook((void *)(base + 0xF0CBC), (void *)trampoline_abort, (void **)&orig_abort_ptr);
 
-        baybars_alert(@"Baybars v12: Safe Bypass Aktif! 🚀");
+        baybars_alert(@"V14: Trampoline Hooklar Tamam! ✅");
     });
 }
 
+// --- MODÜL YAKALAYICI ---
 void image_added_callback(const struct mach_header *mh, intptr_t vmaddr_slide) {
     Dl_info info;
     if (dladdr(mh, &info)) {
         const char *name = info.dli_fname;
-        // Analizindeki "Anogs" modülünü v4 gibi yakalıyoruz
         if (name && (strstr(name, "Anogs") || strstr(name, "anogs"))) {
-            apply_crash_safe_bypass((uintptr_t)vmaddr_slide);
+            apply_trampoline_bypass((uintptr_t)vmaddr_slide);
         }
     }
 }
