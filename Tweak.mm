@@ -3,13 +3,12 @@
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
 
-// Dobby tanımları
 extern "C" {
     int DobbyHook(void *address, void *replace_call, void **origin_call);
     int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
 }
 
-// --- UI ÇİZİM ---
+// --- UI MOTORU ---
 void show_baybars_ui(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
@@ -22,13 +21,9 @@ void show_baybars_ui(NSString *msg) {
             }
         }
         if (!window) window = [UIApplication sharedApplication].windows.firstObject;
-
         if (window && window.rootViewController) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars Bypass" 
-                                                                           message:msg 
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars Bypass" message:msg preferredStyle:UIAlertControllerStyleAlert];
             [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-            
             UIViewController *top = window.rootViewController;
             while (top.presentedViewController) top = top.presentedViewController;
             [top presentViewController:alert animated:YES completion:nil];
@@ -36,56 +31,50 @@ void show_baybars_ui(NSString *msg) {
     });
 }
 
-// --- BYPASS UYGULAMA (ASLR OTOMATİK) ---
-
+// --- HOOKLAR (bak 4.txt & bak 6.txt) ---
 void *(*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
 void *new_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) {
-    return NULL; // Dispatcher bloklandı
+    return NULL; 
 }
 
 void (*orig_sub_F012C)(void *a1);
 void new_sub_F012C(void *a1) {
-    return; // ACE Modül susturuldu
+    return;
 }
 
-void apply_bypass(uintptr_t aslr_slide) {
-    static bool completed = false;
-    if (completed) return;
+// --- GECİKMELİ UYGULAMA ---
+void apply_bypass_delayed(uintptr_t aslr_slide) {
+    // Oyunun ve Anogs'un tam yüklenmesi için 8 saniye bekle
+    // Bu süre çökmeyi engellemek için kritiktir.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        
+        // Hook 1: Dispatcher
+        DobbyHook((void *)(aslr_slide + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
+        
+        // Hook 2: ACE Module
+        DobbyHook((void *)(aslr_slide + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
 
-    // Ofsetler: bak 4.txt ve bak 6.txt
-    DobbyHook((void *)(aslr_slide + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
-    DobbyHook((void *)(aslr_slide + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
+        // Patch: NOP (0xD3844)
+        uint32_t nop = 0xD503201F;
+        DobbyCodePatch((void *)(aslr_slide + 0xD3844), (uint8_t *)&nop, 4);
 
-    uint32_t nop = 0xD503201F;
-    DobbyCodePatch((void *)(aslr_slide + 0xD3844), (uint8_t *)&nop, 4);
-
-    completed = true;
-    show_baybars_ui(@"Anogs ASLR Yakalandı\nBypass Aktif! ✅");
+        show_baybars_ui(@"Güvenli Gecikme Tamamlandı\nBypass Aktif! ✅");
+    });
 }
 
-// --- DİNAMİK TAKİPÇİ (DLADDR KULLANIMI) ---
+// --- ASLR TAKİPÇİSİ ---
 void image_added_callback(const struct mach_header *mh, intptr_t vmaddr_slide) {
     Dl_info info;
-    // dladdr kullanarak mach_header'dan dosya ismini (path) alıyoruz
     if (dladdr(mh, &info)) {
         const char *image_name = info.dli_fname;
         if (image_name && (strstr(image_name, "Anogs") || strstr(image_name, "anogs"))) {
-            apply_bypass((uintptr_t)vmaddr_slide);
+            // ASLR'ı yakaladık ama hemen yama yapmıyoruz, gecikmeliye gönderiyoruz
+            apply_bypass_delayed((uintptr_t)vmaddr_slide);
         }
     }
 }
 
 __attribute__((constructor))
 static void initialize() {
-    // Mevcut yüklü imajları tara
-    uint32_t count = _dyld_image_count();
-    for (uint32_t i = 0; i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (name && (strstr(name, "Anogs") || strstr(name, "anogs"))) {
-            apply_bypass(_dyld_get_image_vmaddr_slide(i));
-            return;
-        }
-    }
-    // Gelecekte yüklenecekler için kaydol
     _dyld_register_func_for_add_image(image_added_callback);
 }
