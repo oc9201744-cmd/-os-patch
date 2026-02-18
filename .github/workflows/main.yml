@@ -1,6 +1,7 @@
-name: iOS Dobby Build
+name: Build iOS dylib
 
 on:
+  push:
   workflow_dispatch:
 
 jobs:
@@ -8,38 +9,31 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Setup SDK
         run: |
-          brew install ldid || true
-
-      - name: Set SDK
-        run: |
-          echo "SDK=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "SDK=$SDK" >> $GITHUB_ENV
 
       - name: Build dylib
         run: |
           clang++ \
           -std=c++17 \
           -dynamiclib \
-          -dobby.cpp \
-          -o Tweak.dylib \
+          -arch arm64 \
           -isysroot $SDK \
+          -fobjc-arc \
+          Tweak.mm \
           -framework UIKit \
           -framework Foundation \
           -framework QuartzCore \
           -framework CoreGraphics \
           -lc++ \
-          -Wno-unused-command-line-argument
-
-      - name: Codesign dylib
-        run: |
-          ldid -S Tweak.dylib
+          -o Tweak.dylib
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
-          name: Tweak
+          name: Tweak-dylib
           path: Tweak.dylib
