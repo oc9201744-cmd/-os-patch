@@ -18,26 +18,18 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Setup Dobby
+      - name: Clone Dobby Source
         run: |
+          # Dobby'yi kütüphane olarak değil, kaynak kod olarak çekiyoruz
+          git clone --depth 1 https://github.com/jmpews/Dobby.git dobby_src
           mkdir -p include
-          # Kingmod'un kullandığı meşhur Dobby kütüphanesini çekiyoruz
-          # Bu link direkt kütüphaneyi indirir, HTML indirmez
-          curl -Lk "https://raw.githubusercontent.com/m4fn3/Dobby/master/builtin-plugin/ApplicationEventMonitor/libdobby.a" -o libdobby.a
-          curl -Lk "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
-          
-          # Boyut kontrolü (HTML mi kütüphane mi?)
-          SIZE=$(du -k "libdobby.a" | cut -f1)
-          if [ $SIZE -lt 100 ]; then
-             echo "❌ Dosya çok küçük, muhtemelen HTML indi! Alternatif deneniyor..."
-             curl -Lk "https://github.com/jmpews/Dobby/releases/download/v1.0.0/libdobby.a" -o libdobby.a
-          fi
-          echo "✅ Kütüphane hazır, boyut: $(du -h libdobby.a)"
+          cp dobby_src/include/dobby.h include/
 
       - name: Build Tweak
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
+          # Dobby'nin kaynak kodlarını Makefile üzerinden derlemeye dahil edeceğiz
           make all FINALPACKAGE=1
 
       - name: Export Output
@@ -47,7 +39,7 @@ jobs:
           if [ -f "output/BaybarsBypass.dylib" ]; then
             echo "✅ Dylib başarıyla oluşturuldu."
           else
-            echo "❌ Hata: Dylib üretilemedi!"
+            echo "❌ Hata: Dylib dosyası üretilemedi!"
             exit 1
           fi
 
