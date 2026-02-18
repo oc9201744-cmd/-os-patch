@@ -1,8 +1,9 @@
-Package: com.apple.system.service
-Name: SystemHealthProvider
+Package: com.baybars.bypass
+Name: BaybarsBypass
+Depends: mobilesubstrate
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: System Health Monitoring Service for iOS.
-Maintainer: Apple Support
-Author: Apple
-Section: System
+Description: Android Logic Return 0 Hook for iOS 17
+Maintainer: Baybars
+Author: Baybars
+Section: Tweaks
