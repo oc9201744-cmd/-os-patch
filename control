@@ -3,7 +3,7 @@ Name: BaybarsBypass
 Depends: mobilesubstrate
 Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Dobby Powered Runtime Bypass
+Description: Baybars Runtime Bypass with Dobby
 Maintainer: Baybars
 Author: Baybars
 Section: Tweaks
