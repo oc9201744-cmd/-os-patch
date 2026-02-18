@@ -2,15 +2,15 @@
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 
-// 1. Sistem kütüphanelerini Dobby'den ÖNCE çağırıyoruz (Hata almamak için)
+// 1. Önce sistem dosyalarını modül olarak değil, ham halleriyle dâhil edelim
 #include <stdint.h>
 #include <sys/types.h>
 
-// 2. Dobby kütüphanesini dahil ediyoruz
-#include "include/dobby.h"
+// 2. Dobby'nin hata veren kısımlarını atlamak için extern ile sadece ihtiyacımız olan fonksiyonu tanımlayalım
+// Bu sayede dobby.h dosyasını dâhil etmemize GEREK KALMAZ ve hata almayız!
+extern "C" int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
 
-// 3. PAC (Pointer Authentication) temizleme fonksiyonu
-// arm64e (iPhone XS ve üstü) cihazlarda ban yememek için şart
+// 3. PAC Temizleme
 static void* clean_ptr(void* ptr) {
 #if defined(__arm64e__)
     return (void*)((uintptr_t)ptr & 0x0000000FFFFFFFFF);
@@ -19,35 +19,29 @@ static void* clean_ptr(void* ptr) {
 #endif
 }
 
-// 4. Ana Framework (Anogs) yüklendiğinde çalışacak kısım
 static void on_load(const struct mach_header *mh, intptr_t slide) {
     Dl_info info;
     if (dladdr(mh, &info)) {
-        // Eğer yüklenen dosya oyunun koruma framework'ü ise
         if (info.dli_fname && strstr(info.dli_fname, "Anogs")) {
             
-            // --- SENİN BYPASS VERİLERİN ---
+            // SENİN OFSETİN
             uintptr_t offset = 0xD3844; 
             void *target_addr = (void *)(slide + offset);
             void *final_addr = clean_ptr(target_addr);
             
-            // Yama: MOV W1, #0xC0
+            // PATCH: MOV W1, #0xC0
             uint32_t patch_hex = 0x52801801;
             
-            // Dobby ile güvenli runtime yaması
+            // DobbyCodePatch fonksiyonu zaten libdobby.a içinde var.
+            // Yukarıda "extern" ile tanımladığımız için dobby.h hatasına takılmadan çalışacak.
             if (DobbyCodePatch(final_addr, (uint8_t *)&patch_hex, sizeof(patch_hex)) == 0) {
-                NSLog(@"[Baybars] BYPASS AKTIF EDILDI! Adres: %p", final_addr);
-            } else {
-                NSLog(@"[Baybars] Bypass Hatası: Dobby yazamadı.");
+                NSLog(@"[Baybars] BYPASS AKTIF! Adres: %p", final_addr);
             }
-            // ------------------------------
         }
     }
 }
 
-// 5. Dylib belleğe yüklendiği an tetiklenen constructor
 __attribute__((constructor))
 static void init() {
-    // Tüm framework yüklemelerini izle
     _dyld_register_func_for_add_image(&on_load);
 }
