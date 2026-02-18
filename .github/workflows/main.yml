@@ -1,11 +1,11 @@
-name: Build Dobby Static iOS
+name: build-dobby-ios-arm64
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - name: Checkout
@@ -13,23 +13,35 @@ jobs:
 
       - name: Clone Dobby
         run: |
-          git clone --depth=1 https://github.com/jmpews/Dobby.git
+          git clone https://github.com/jmpews/Dobby.git dobby
+          cd dobby
+          git submodule update --init --recursive
 
-      - name: Build libdobby.a manually
+      - name: Build dobby.a (iOS arm64, no codesign)
         run: |
-          cd Dobby
-          
+          cd dobby
+          mkdir build
+          cd build
+
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 
-          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=12.0 -c source/InterceptRouting/InlineHookRouting/ARM64/*.cc
-          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=12.0 -c source/TrampolineBridge/Trampoline/*.cc
-          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=12.0 -c source/Memory/*.cc
-          clang -arch arm64 -isysroot $SDK -miphoneos-version-min=12.0 -c source/*.cc
+          clang++ -arch arm64 \
+            -isysroot $SDK \
+            -std=c++17 \
+            -fPIC -fvisibility=hidden \
+            -DDOBBY_GENERATE_SHARED=0 \
+            -I../include \
+            -I../source \
+            -I../external \
+            ../source/*.cc \
+            ../source/**/*.cc \
+            ../external/**/*.cc \
+            -c
 
-          ar rcs libdobby.a *.o
+          libtool -static -o dobby.a *.o
 
-      - name: Upload libdobby.a
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libdobby-ios-arm64
-          path: Dobby/libdobby.a
+          name: dobby-ios-arm64
+          path: dobby/build/dobby.a
