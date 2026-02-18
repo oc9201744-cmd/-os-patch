@@ -1,4 +1,4 @@
-name: Baybars CMake Builder
+name: Baybars Bypass Builder
 on: [push, workflow_dispatch]
 
 jobs:
@@ -18,32 +18,30 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Build Dobby with CMake
+      - name: Build Dobby Library
         run: |
-          # 1. Dobby reposunu çek
+          # Dobby'yi senin attığın o yapıdaki gibi taze çekiyoruz
           git clone --recursive --depth 1 https://github.com/jmpews/Dobby.git dobby_src
           cd dobby_src
           
-          # 2. Hata veren kontrol dosyasını devre dışı bırak (Sed ile bypass)
+          # Hata aldığın o 'İşlemci yapılandırılmadı' kontrolünü kökten siliyoruz
           sed -i '' 's/include(Cmake\/build_environment_check.cmake)//g' CMakeLists.txt
           
-          # 3. Build klasörü oluştur
           mkdir build && cd build
           
-          # 4. CMake yapılandırması (Spesifik ARM64 ayarlarıyla)
+          # CMake yapılandırması (İşlemciyi zorla arm64 yapıyoruz)
           cmake .. -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
             -DCMAKE_SYSTEM_PROCESSOR=arm64 \
             -DDOBBY_GENERIC_ARM64=ON \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-            -DBUILD_SHARED_LIBS=OFF \
-            -DDOBBY_DEBUG=OFF
+            -DBUILD_SHARED_LIBS=OFF
           
-          # 5. Xcode ile kütüphaneyi derle
+          # Kütüphaneyi derle
           xcodebuild -configuration Release -scheme dobby -sdk iphoneos
           
-          # 6. Kütüphaneyi ve Header'ları Theos'un göreceği yere taşı
+          # Dosyaları Theos'un göreceği ana dizine çıkar
           cp Release-iphoneos/libdobby.a ../../
           cp -r ../include ../../
 
@@ -51,11 +49,10 @@ jobs:
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Theos ile asıl tweak'i derle
           make all FINALPACKAGE=1
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass_Final
+          name: BaybarsBypass_Dylib
           path: .theos/obj/*.dylib
