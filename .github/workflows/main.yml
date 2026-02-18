@@ -1,58 +1,44 @@
-name: Baybars Bypass Builder
-on: [push, workflow_dispatch]
+name: Build Dobby iOS
+
+on:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Clone Dobby
         run: |
-          git clone --recursive https://github.com/theos/theos.git ~/theos
-          echo "THEOS=~/theos" >> $GITHUB_ENV
-          echo "~/theos/bin" >> $GITHUB_PATH
+          git clone --depth=1 https://github.com/jmpews/Dobby.git dobby_src
 
-      - name: Setup iOS SDK
+      - name: Configure CMake (iOS)
         run: |
-          mkdir -p ~/theos/sdks
-          ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
-
-      - name: Build Dobby Library
-        run: |
-          # Dobby'yi senin attığın o yapıdaki gibi taze çekiyoruz
-          git clone --recursive --depth 1 https://github.com/jmpews/Dobby.git dobby_src
           cd dobby_src
-          
-          # Hata aldığın o 'İşlemci yapılandırılmadı' kontrolünü kökten siliyoruz
-          sed -i '' 's/include(Cmake\/build_environment_check.cmake)//g' CMakeLists.txt
-          
           mkdir build && cd build
-          
-          # CMake yapılandırması (İşlemciyi zorla arm64 yapıyoruz)
-          cmake .. -G Xcode \
+          cmake .. \
+            -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
-            -DCMAKE_SYSTEM_PROCESSOR=arm64 \
-            -DDOBBY_GENERIC_ARM64=ON \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
-            -DBUILD_SHARED_LIBS=OFF
-          
-          # Kütüphaneyi derle
-          xcodebuild -configuration Release -scheme dobby -sdk iphoneos
-          
-          # Dosyaları Theos'un göreceği ana dizine çıkar
-          cp Release-iphoneos/libdobby.a ../../
-          cp -r ../include ../../
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
 
-      - name: Build Tweak
+      - name: Build Dobby (NO CODESIGN)
         run: |
-          export THEOS=~/theos
-          export PATH="$THEOS/bin:$PATH"
-          make all FINALPACKAGE=1
+          cd dobby_src/build
+          xcodebuild \
+            -configuration Release \
+            -scheme dobby \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
 
-      - name: Upload Result
+      - name: Upload libdobby.a
         uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass_Dylib
-          path: .theos/obj/*.dylib
+          name: libdobby
+          path: dobby_src/build/Release-iphoneos/libdobby.a
