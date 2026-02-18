@@ -1,8 +1,9 @@
-Package: com.test.dobbydemo
-Name: DobbyDemo
-Version: 1.0
+Package: com.baybars.bypass
+Name: BaybarsBypass
+Depends: mobilesubstrate
+Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Dobby test dylib
-Maintainer: test
-Author: test
+Description: Dobby Bypass for Anogs
+Maintainer: Baybars
+Author: Baybars
 Section: Tweaks
