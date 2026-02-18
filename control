@@ -1,9 +1,8 @@
-Package: com.baybars.patch
-Name: BaybarsBypass
-Depends: mobilesubstrate
-Version: 1.0.0
-Architecture: iphoneos-arm
-Description: Baybars Runtime Bypass with Dobby
-Maintainer: Baybars
-Author: Baybars
+Package: com.example.mytweak
+Name: MyDobbyTweak
+Version: 1.0
+Architecture: iphoneos-arm64
+Description: Dobby based dylib
+Maintainer: you
+Author: you
 Section: Tweaks
