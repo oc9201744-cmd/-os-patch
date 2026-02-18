@@ -2,52 +2,70 @@
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #include <stdint.h>
-#include <UIKit/UIKit.h> // Ekran bildirimi için gerekli
-
+#include <UIKit/UIKit.h>
 #include "dobby.h"
 
-// Ofset ve Patch işlemleri için base adresi bulma
-uintptr_t get_image_address(const char *name) {
+// Framework adresini bulma fonksiyonu
+uintptr_t get_framework_slide(const char *framework_name) {
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
-        if (strstr(_dyld_get_image_name(i), name)) {
+        const char *img_name = _dyld_get_image_name(i);
+        if (img_name && strstr(img_name, framework_name)) {
             return _dyld_get_image_vmaddr_slide(i);
         }
     }
     return 0;
 }
 
-// Oyun içinde "Aktif Oldu" yazısı çıkartma fonksiyonu
-void show_alert(NSString *title, NSString *message) {
+// Görsel Uyarı (Aktif Oldu Yazısı)
+void show_popup(NSString *title, NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:title 
-                                                                       message:message 
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        UIAlertAction *ok = [UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil];
-        [alert addAction:ok];
-        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+        UIWindow *topWindow = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIWindowScene* scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    topWindow = scene.windows.firstObject;
+                    break;
+                }
+            }
+        } else {
+            topWindow = [UIApplication sharedApplication].keyWindow;
+        }
+
+        if (topWindow) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:title 
+                                                                           message:msg 
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+            [topWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+        }
     });
 }
 
-void setup_bypass() {
-    uintptr_t base_addr = get_image_address("PubgMobile");
-    if (base_addr == 0) return;
-
-    [span_0](start_span)// Örnek: bak 6.txt dosyasındaki sub_F838C fonksiyonu başlangıcını hooklama[span_0](end_span)
-    // Örnek: image.png dosyasındaki 0xD3844 ofsetine patch atma
+void apply_anogs_bypass() {
+    // 1. ADIM: Anogs framework'ünü hedefle
+    uintptr_t anogs_slide = get_framework_slide("Anogs");
     
-    // --- BURAYA DobbyHook veya DobbyCodePatch KODLARINI EKLE ---
-
-    // Konsola yazdır (Xcode Loglarında görünür)
-    NSLog(@"[Baybars] Bypass başarıyla aktif edildi!");
-
-    // Ekrana bildirim gönder
-    show_alert(@"Baybars Bypass", @"Dobby ile tüm yamalar aktif edildi! ✅");
+    if (anogs_slide > 0) {
+        // 2. ADIM: Ofset Uygula (0xD3844 senin resmindeki ofset)
+        uintptr_t target_addr = anogs_slide + 0xD3844;
+        
+        // Patch: MOV W1, #0xC0 (0x52801801) veya NOP (0xD503201F)
+        uint32_t patch_hex = 0x52801801; 
+        
+        if (DobbyCodePatch((void *)target_addr, (uint8_t *)&patch_hex, 4) == 0) {
+            show_popup(@"Baybars Bypass", @"Anogs Klasörüne Başarıyla Enjekte Edildi! ✅");
+        }
+    } else {
+        // Eğer Anogs bulunamazsa log at (Console uygulamasında görünür)
+        NSLog(@"[Baybars] Hata: Anogs framework bulunamadı!");
+    }
 }
 
 %ctor {
-    // Oyunun tamamen yüklenmesi için 5 saniye bekle ve sonra aktif et
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        setup_bypass();
+    // Jailbreak'siz cihazlarda oyunun Anogs'u yüklemesi zaman alır.
+    // 12 saniye bekleyelim ki klasör/framework tam yüklensin.
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        apply_anogs_bypass();
     });
 }
