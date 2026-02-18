@@ -1,20 +1,18 @@
-# Mimariyi arm64 ve arm64e (yeni cihazlar) olarak tutuyoruz
+export THEOS_DEVICE_IP = 127.0.0.1
+TARGET := iphone:clang:latest:15.0
 ARCHS = arm64 arm64e
-TARGET := iphone:clang:latest:13.0
 
-# Jailsiz sistemlerde kütüphaneyi bağımsız (standalone) yapar
-export THEOS_PACKAGE_SCHEME = rootless
+DEBUG = 0
+FINALPACKAGE = 1
 
 include $(THEOS)/makefiles/common.mk
 
-# TWEAK_NAME yerine LIBRARY_NAME kullanarak dylib çıktısı alıyoruz
-LIBRARY_NAME = Health
-Health_FILES = Health.xm
-Health_CFLAGS = -fobjc-arc
+TWEAK_NAME = BaybarsBypass
 
-# Kingmod'un kullandığı sistem kütüphaneleri (Frameworkler)
-Health_FRAMEWORKS = UIKit Foundation CoreGraphics
-# Bellek izinleri için gerekli LDFLAGS
-Health_LDFLAGS = -Wl,-segprot,__TEXT,rwx,rwx
+# Burada Health.xm dosyasını derlemesini söylüyoruz
+BaybarsBypass_FILES = Health.xm
+BaybarsBypass_CFLAGS = -fobjc-arc
+# Jailbreak'siz cihazlar için Substrate kütüphanesini ekliyoruz
+BaybarsBypass_LIBRARIES = substrate
 
-include $(THEOS_MAKE_PATH)/library.mk
+include $(THEOS)/makefiles/tweak.mk
