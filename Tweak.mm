@@ -1,15 +1,18 @@
 #import <Foundation/Foundation.h>
 #import <mach-o/dyld.h>
-#import <dlfcn.h> // dladdr için gerekli
-#include <UIKit/UIKit.h>
-#include "dobby.h"
+#import <dlfcn.h>
+#import <UIKit/UIKit.h>
 
-// Framework adresini bulmanın en garanti yolu
+// Dobby'nin C fonksiyonlarını C++ içinde hatasız kullanmak için extern "C" içine alıyoruz
+extern "C" {
+    #include "dobby.h"
+}
+
+// --- ASLR Hesaplama (En Stabil Yöntem) ---
 uintptr_t get_anogs_base() {
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
-        // Resimlerde ve loglarda gördüğümüz "Anogs" ismini arıyoruz
         if (name && strstr(name, "Anogs")) {
             return _dyld_get_image_vmaddr_slide(i);
         }
@@ -17,8 +20,8 @@ uintptr_t get_anogs_base() {
     return 0;
 }
 
-// Görsel Bildirim
-void baybars_alert(NSString *msg) {
+// --- UI Bildirimi ---
+void show_baybars_alert(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
         if (@available(iOS 13.0, *)) {
@@ -32,7 +35,7 @@ void baybars_alert(NSString *msg) {
             window = [UIApplication sharedApplication].keyWindow;
         }
         
-        if (window) {
+        if (window && window.rootViewController) {
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars Bypass" 
                                                                            message:msg 
                                                                     preferredStyle:UIAlertControllerStyleAlert];
@@ -42,45 +45,46 @@ void baybars_alert(NSString *msg) {
     });
 }
 
-// --- HOOKLAR (Analiz Dosyalarına Göre) ---
+// --- HOOKLAR (Analiz: bak 4.txt & bak 6.txt) ---
 
-// sub_F838C: Güvenlik tarayıcı dispatcher
+// 1. Dispatcher Hook (Ofset: 0xF838C)
+// Bu fonksiyon sistem çağrılarını yönetiyor, bypass için NULL döndürüyoruz.
 void *(*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
 void *new_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) {
-    // Taramaları durdurmak için boş dönüyoruz
     return NULL; 
 }
 
-// sub_F012C: ACE Modül Yükleyici
+// 2. ACE Modül Hook (Ofset: 0xF012C)
+// ACE 7.7.31 versiyonlu güvenlik modüllerini durdurur.
 void (*orig_sub_F012C)(void *a1);
 void new_sub_F012C(void *a1) {
-    // ACE'nin kendini başlatmasını engelle
-    return;
+    return; // Modülü çalıştırma, direkt geri dön.
 }
 
-void setup_bypass() {
+// --- ANA BYPASS MOTORU ---
+void start_baybars_engine() {
     uintptr_t base = get_anogs_base();
-    if (base == 0) {
-        NSLog(@"[Baybars] Anogs bulunamadı, tekrar deneniyor...");
-        return;
+    
+    if (base != 0) {
+        // Dobby Hook İşlemleri
+        DobbyHook((void *)(base + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
+        DobbyHook((void *)(base + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
+
+        // Code Patch (Ofset: 0xD3844) - Kritik veri kontrolünü etkisiz kıl
+        uint32_t nop = 0xD503201F;
+        DobbyCodePatch((void *)(base + 0xD3844), (uint8_t *)&nop, 4);
+
+        show_baybars_alert(@"Dobby Engine: Anogs Bypass Aktif! ✅");
+    } else {
+        NSLog(@"[Baybars] HATA: Anogs framework bulunamadı!");
     }
-
-    // Hook 1: Dispatcher
-    DobbyHook((void *)(base + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
-
-    // Hook 2: Modül Başlatıcı
-    DobbyHook((void *)(base + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
-
-    // Patch: Veri kontrolünü NOP'la (Ofset: 0xD3844)
-    uint32_t nop = 0xD503201F;
-    DobbyCodePatch((void *)(base + 0xD3844), (uint8_t *)&nop, 4);
-
-    baybars_alert(@"Bypass Başarıyla Tamamlandı! ✅");
 }
 
-%ctor {
-    // Uygulama ve Anogs'un yüklenmesi için 15 saniye bekle (Jailbreak'siz cihazlar için kritik)
+// Tweak yüklendiğinde çalışacak constructor
+__attribute__((constructor))
+static void initialize() {
+    // Jailbreak'siz cihazlarda oyunun Anogs'u yüklemesi için zaman tanıyalım
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        setup_bypass();
+        start_baybars_engine();
     });
 }
