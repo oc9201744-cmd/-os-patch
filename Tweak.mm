@@ -2,82 +2,74 @@
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
+#include <sys/socket.h>
 
 // --- DOBBY ---
 extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
-
-// --- TRAMPOLINE SAKLAYICILAR ---
-// Analizdeki en kritik noktalar için orijinal köprüleri hazırlıyoruz
-static void* (*orig_root_ptr)(void*);
-static int   (*orig_sc_ptr)(void*, void*, int, void*);
-static int   (*orig_hash_ptr)(void);
-static int   (*orig_abort_ptr)(void*);
 
 // --- UI BİLDİRİM ---
 void baybars_alert(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = [UIApplication sharedApplication].keyWindow;
         if (!window) window = [UIApplication sharedApplication].windows.firstObject;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v14" message:msg preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v15" message:msg preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"Gazla!" style:UIAlertActionStyleDefault handler:nil]];
         [window.rootViewController presentViewController:alert animated:YES completion:nil];
     });
 }
 
-// --- TRAMPOLINE HANDLERS (Orijinale Köprü Atanlar) ---
-
-void* trampoline_root(void* arg) {
-    // Önce orijinal akışı çalıştır (Trampoline köprüsü üzerinden)
-    orig_root_ptr(arg);
-    // Ama sonucu temiz döndürerek raporu iptal et
-    return NULL;
+// --- NETWORK SILENCER ---
+// Oyun hata bulsa bile dışarıya "buldum" diyemeyecek
+static ssize_t (*orig_send)(int, const void*, size_t, int);
+ssize_t ghost_send(int sockfd, const void *buf, size_t len, int flags) {
+    if (buf && len > 5) {
+        const char* d = (const char*)buf;
+        if (strstr(d, "root_alert") || strstr(d, "cheat_id") || strstr(d, "tcj_ss") || strstr(d, "Abort")) {
+            return len; // Paketi yut, sunucuya gönderme
+        }
+    }
+    return orig_send(sockfd, buf, len, flags);
 }
 
-int trampoline_sc(void* a, void* b, int c, void* d) {
-    // Orijinal bütünlük kontrolü fonksiyonunu çalıştır
-    orig_sc_ptr(a, b, c, d);
-    // Oyunun beklediği 'temiz' sonucunu (0) dön
-    return 0;
+// --- ABORT DEFENSE (0xF0CBC) ---
+int (*orig_abort)(void*);
+int hook_abort_decision(void* a1) {
+    // Analiz: sub_F0CBC -> Bu fonksiyon 0 dönerse oyun KAPANMAZ.
+    return 0; 
 }
 
-int trampoline_abort(void* a1) {
-    // Bu fonksiyon çağrıldığında orijinali hiç çağırma! 
-    // Çünkü burası cellat fonksiyonu (0xF0CBC). Direkt 0 dönerek ölümü engelle.
-    return 0;
-}
-
-// --- ANA MOTOR (SIRALI TRAMPOLINE KURULUMU) ---
-void apply_trampoline_bypass(uintptr_t base) {
-    // v4'teki gibi 20 saniye güvenli bekleme
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+// --- ANA MOTOR ---
+void apply_final_bypass(uintptr_t base) {
+    // 25 saniye bekleme: Oyunun tüm güvenlik thread'leri (ScanThread) tam çalışmaya başlasın
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(25 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         
         if (base == 0) return;
 
-        // 1. Hook: Root Alert (Analiz: 0x63D4)
-        DobbyHook((void *)(base + 0x63D4), (void *)trampoline_root, (void **)&orig_root_ptr);
-        
-        [NSThread sleepForTimeInterval:1.0];
+        // 1. Sistem Seviyesi (Hafızada iz bırakmaz, oyundan atmaz)
+        void* send_addr = dlsym(RTLD_DEFAULT, "send");
+        if (send_addr) {
+            DobbyHook(send_addr, (void*)ghost_send, (void**)&orig_send);
+        }
 
-        // 2. Hook: SC Protect (Analiz: 0x7B2A8)
-        DobbyHook((void *)(base + 0x7B2A8), (void *)trampoline_sc, (void **)&orig_sc_ptr);
+        [NSThread sleepForTimeInterval:2.0];
 
-        [NSThread sleepForTimeInterval:1.0];
+        // 2. Abort Karar Noktası (Osub Hosub'un kalbi)
+        // Analizindeki sub_F0CBC: Burası oyunun "Kapatıyorum!" dediği yer.
+        // Orijinal fonksiyonu bozmadan Trambolin ile 0 döndürüyoruz.
+        DobbyHook((void *)(base + 0xF0CBC), (void *)hook_abort_decision, (void **)&orig_abort);
 
-        // 3. Hook: Abort Kararı (Analiz: 0xF0CBC)
-        // En kritik Trampoline burası; oyunun kapanma emrini burada emiyoruz.
-        DobbyHook((void *)(base + 0xF0CBC), (void *)trampoline_abort, (void **)&orig_abort_ptr);
-
-        baybars_alert(@"V14: Trampoline Hooklar Tamam! ✅");
+        baybars_alert(@"Baybars v15: Ghost Integrity Aktif! ✅");
     });
 }
 
-// --- MODÜL YAKALAYICI ---
+// --- DİNAMİK YÜKLEYİCİ ---
 void image_added_callback(const struct mach_header *mh, intptr_t vmaddr_slide) {
     Dl_info info;
     if (dladdr(mh, &info)) {
         const char *name = info.dli_fname;
+        // Analizindeki Anogs modülünü v4 gibi dinamik yakala
         if (name && (strstr(name, "Anogs") || strstr(name, "anogs"))) {
-            apply_trampoline_bypass((uintptr_t)vmaddr_slide);
+            apply_final_bypass((uintptr_t)vmaddr_slide);
         }
     }
 }
