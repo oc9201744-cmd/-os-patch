@@ -1,49 +1,42 @@
-name: "Kingmod Dylib Builder"
+name: Baybars Auto Builder
 
 on:
   push:
-    branches: [ "main" ]
-  workflow_dispatch:
+    branches: [ "main", "master" ] # Kodu her güncellediğinde otomatik başlar
+  workflow_dispatch: # İstersen elinle de başlatabilirsin
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Theos Environment
+      - name: Setup Theos
+        run: |
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+
+      - name: Download iOS SDK
+        run: |
+          git clone --quiet https://github.com/theos/sdks.git $THEOS/sdks
+
+      - name: Compile Tweak
         run: |
           export THEOS=~/theos
-          rm -rf $THEOS
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-          echo "THEOS=$THEOS" >> $GITHUB_ENV
-
-      - name: Install ldid (Hata Engelleyici)
-        run: |
-          # ldid aracını kuruyoruz ki 'command not found' hatası vermesin
-          brew install ldid
-
-      - name: Setup iOS SDK
-        run: |
-          rm -rf ${{ env.THEOS }}/sdks
-          git clone --depth 1 https://github.com/theos/sdks.git ${{ env.THEOS }}/sdks
-
-      - name: Compile Kingmod Dylib
-        run: |
-          export THEOS=${{ env.THEOS }}
-          # Hem FINALPACKAGE hem de LDID yolunu netleştiriyoruz
-          make clean && make FINALPACKAGE=1
+          make clean
+          make package FINALPACKAGE=1
           
-      - name: Prepare Artifact
+      - name: Extract Dylib
         run: |
           mkdir -p output
-          # .theos/obj içindeki dylib'i bul ve al
-          find .theos/obj -name "*.dylib" -exec cp {} output/Health.dylib \;
+          # .deb içindeki dylib'i dışarı çıkarıyoruz
+          find packages/*.deb -exec dpkg-deb -x {} temp_deb \;
+          find temp_deb -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
 
-      - name: Upload Result
+      - name: Upload Dylib Only
         uses: actions/upload-artifact@v4
         with:
-          name: Kingmod-Dylib
-          path: output/Health.dylib
+          name: Baybars-Dylib-iOS17
+          path: output/BaybarsBypass.dylib
