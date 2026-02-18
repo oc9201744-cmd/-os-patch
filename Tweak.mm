@@ -3,11 +3,11 @@
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
 
-// Dobby'nin C fonksiyonlarını C++ (.mm) içinde hatasız kullanmak için extern "C" şarttır.
+// --- DOBBY FONKSİYONLARINI MANUEL TANIMLAMA (Hata Almamak İçin) ---
+// Bu bölüm sayesinde "dobby.h bulunamadı" hatası imkansız hale gelir.
 extern "C" {
-    // Eğer Makefile kullanmıyorsan yolu "include/dobby.h" olarak güncellemelisin.
-    // Ama Makefile varsa sadece "dobby.h" yeterlidir.
-    #include "dobby.h" 
+    int DobbyHook(void *address, void *replace_call, void **origin_call);
+    int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
 }
 
 // --- ASLR Hesaplama ---
@@ -22,7 +22,7 @@ uintptr_t get_anogs_base() {
     return 0;
 }
 
-// --- Görsel Bildirim (Aktif Oldu Yazısı) ---
+// --- Görsel Bildirim ---
 void baybars_alert(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *window = nil;
@@ -47,46 +47,42 @@ void baybars_alert(NSString *msg) {
     });
 }
 
-// --- HOOKLAR (Analizlere Dayalı: bak 4.txt & bak 6.txt) ---
+// --- ANALİZ HOOKLARI (bak 4.txt ve bak 6.txt kaynaklı) ---
 
-// 1. Dispatcher Hook (Ofset: 0xF838C)
+// Ofset: 0xF838C (Sistem Çağrısı Dispatcher)
 void *(*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
 void *new_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) {
-    // Güvenlik taramalarını durdurmak için boş dönüyoruz.
     return NULL; 
 }
 
-// 2. ACE Modül Yükleyici Hook (Ofset: 0xF012C)
+// Ofset: 0xF012C (ACE Modül Başlatıcı)
 void (*orig_sub_F012C)(void *a1);
 void new_sub_F012C(void *a1) {
-    // ACE 7.7.31 sürümünün kendini başlatmasını engelle.
     return;
 }
 
-// --- ANA MOTOR ---
+// --- BYPASS BAŞLATICI ---
 void start_baybars_bypass() {
     uintptr_t base = get_anogs_base();
     
     if (base != 0) {
-        // Dobby Hooking Uygulaması
+        // Dobby Fonksiyonlarını Kullanıyoruz
         DobbyHook((void *)(base + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
         DobbyHook((void *)(base + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
 
-        // Code Patch (Ofset: 0xD3844) - Kritik veri kontrolü NOP (Analizden)
+        // Ofset: 0xD3844 (NOP Patch)
         uint32_t nop_code = 0xD503201F;
         DobbyCodePatch((void *)(base + 0xD3844), (uint8_t *)&nop_code, 4);
 
-        baybars_alert(@"Dobby Engine: Anogs Bypass Başarıyla Aktif! ✅");
+        baybars_alert(@"Baybars Dobby: Bypass Aktif Edildi! ✅");
     } else {
-        NSLog(@"[Baybars] HATA: Anogs framework henüz yüklenmedi!");
+        NSLog(@"[Baybars] Anogs Bulunamadı!");
     }
 }
 
-// Constructor: Tweak enjekte edildiğinde otomatik başlar.
+// Constructor
 __attribute__((constructor))
 static void initialize() {
-    // Jailbreak'siz cihazlarda oyunun Anogs klasörünü yüklemesi zaman alır.
-    // 15 saniye bekleyip sonra bypass'ı çakıyoruz.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         start_baybars_bypass();
     });
