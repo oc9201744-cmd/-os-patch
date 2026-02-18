@@ -1,12 +1,11 @@
-export ARCHS = arm64 arm64e
-export TARGET = iphone:clang:latest:14.0
-
-TWEAK_NAME = BaybarsBypass
-$(TWEAK_NAME)_FILES = Tweak.mm
-$(TWEAK_NAME)_LDFLAGS = ./libdobby.a
-
-# Bu satır derleyiciye "dobby.h'yi include klasöründe ara" der
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc -I. -I./include
+ARCHS = arm64 arm64e
+TARGET = iphone:clang:latest:14.0
 
 include $(THEOS)/makefiles/common.mk
-include $(THEOS)/makefiles/tweak.mk
+
+TWEAK_NAME = BypassTweak
+BypassTweak_FILES = Tweak.xm
+BypassTweak_CFLAGS = -I./include   # include klasöründeki dobby.h için
+BypassTweak_LDFLAGS = -L. -ldobby   # ana dizindeki libdobby.a için
+
+include $(THEOS_MAKE_PATH)/tweak.mk
