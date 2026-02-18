@@ -1,54 +1,53 @@
 #include <Foundation/Foundation.h>
-#include "dobby.h"
 #include <mach-o/dyld.h>
 #include <stdint.h>
 #include <string.h>
+#include "./dobby.h" // Aynı dizinde olduğunu belirttik
 
-// 1. Modülün (Uygulamanın) Base Adresini Bulma
+// Uygulamanın (veya kütüphanenin) ASLR kaymasını hesaplayan fonksiyon
 uintptr_t get_base_address(const char *image_name) {
     uint32_t count = _dyld_image_count();
     for (uint32_t i = 0; i < count; i++) {
         const char *name = _dyld_get_image_name(i);
         if (name && strstr(name, image_name)) {
-            return _dyld_get_image_vmaddr_slide(i) + 0x100000000; // ASLR Slide + Header
+            // iOS 64-bit base address + slide
+            return _dyld_get_image_vmaddr_slide(i) + 0x100000000;
         }
     }
     return 0;
 }
 
-// 2. Patch İşlemi
-void apply_memory_patches() {
-    // "UygulamaAdi" kısmını senin uygulamanın binary adı ile değiştir
-    uintptr_t base = get_base_address("UygulamaAdi");
+void apply_patch() {
+    // BURAYI DEĞİŞTİR: Hedef uygulamanın binary adını yaz (Örn: "MobileNotes")
+    const char *target_binary = "HedefUygulama"; 
+    
+    uintptr_t base = get_base_address(target_binary);
     
     if (base != 0) {
-        NSLog(@"[Patch] Base Adres Bulundu: 0x%lx", base);
+        // BURAYI KONTROL ET: IDA'daki tam ofseti buraya yaz
+        // loc_D3844'teki TST'den sonraki B.EQ satırı muhtemelen +4'tedir.
+        uintptr_t patch_address = base + 0xD3848; 
 
-        // ÖRNEK: loc_D3844'teki B.EQ (Branch if Equal) komutunu NOP yapalım
-        // Ofset: 0xD3844 + 4 (TST'den sonraki satır olduğu için)
-        // Not: IDA'daki tam adresi kontrol et, 0xD3848 olabilir.
-        
-        void *target_addr = (void *)(base + 0xD3848); 
+        // ARM64 NOP (No Operation) Instruction Hex: 0x1F2003D5
+        // Küçük endian (little endian) olarak diziyoruz:
+        uint8_t nop_instr[] = {0x1F, 0x20, 0x03, 0xD5};
 
-        // ARM64 için NOP hex kodu: 0x1F2003D5
-        uint8_t nop_bytes[] = {0x1F, 0x20, 0x03, 0xD5};
-
-        // Dobby ile belleğe yazma (Memory Protection'ı otomatik halleder)
-        if (DobbyCodePatch(target_addr, nop_bytes, 4) == kMemoryOperationSuccess) {
-            NSLog(@"[Patch] Başarıyla uygulandı!");
+        // Dobby ile belleği yamala
+        if (DobbyCodePatch((void *)patch_address, nop_instr, 4) == 0) {
+            NSLog(@"[MemoryPatch] Başarıyla 0x%lx adresine uygulandı!", patch_address);
         } else {
-            NSLog(@"[Patch] Hata oluştu!");
+            NSLog(@"[MemoryPatch] Yama başarısız oldu!");
         }
     } else {
-        NSLog(@"[Patch] Modül bulunamadı!");
+        NSLog(@"[MemoryPatch] '%s' bulunamadı, base adres 0.", target_binary);
     }
 }
 
-// Uygulama yüklenirken otomatik çalışır
+// Dylib yüklendiğinde otomatik çalışan constructor
 __attribute__((constructor))
 static void initialize() {
-    // Uygulama tam yüklendikten sonra patch atmak daha güvenlidir
+    // Uygulama tamamen belleğe yerleşsin diye 1 saniye bekleyip patch atıyoruz
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        apply_memory_patches();
+        apply_patch();
     });
 }
