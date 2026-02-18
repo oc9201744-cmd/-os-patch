@@ -1,64 +1,57 @@
 #import <Foundation/Foundation.h>
 #import <mach-o/dyld.h>
-#import <UIKit/UIKit.h>
+#import "dobby.h"   // Dobby başlık dosyasını projene ekle
 
-extern "C" int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t size);
+// Log için (hem konsola hem syslog'a)
+#define LOG(fmt, ...) NSLog(@"[Bypass] " fmt, ##__VA_ARGS__)
 
-// --- AYARLAR ---
-#define TARGET_LIB "libanogs" // Aradığımız kütüphane
-#define PATCH_OFFSET 0xD3848  // Senin resimdeki ofsetin
+// Orijinal fonksiyon tipi (parametreleri bilinmiyor, genelde ilk parametre X0)
+typedef void (*sub_D372C_func)(void *arg0, ...);
+sub_D372C_func orig_sub_D372C = NULL;
 
-// Kütüphanenin çalışma zamanındaki base adresini bulur
-uintptr_t get_lib_base(const char *lib_name) {
-    uint32_t count = _dyld_image_count();
-    for (uint32_t i = 0; i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (name && strstr(name, lib_name)) {
-            return _dyld_get_image_vmaddr_slide(i) + 0x100000000;
-        }
-    }
-    return 0;
-}
-
-void show_alert(NSString *msg) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BAYBARS" 
-                                       message:msg 
-                                       preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Gazla" style:UIAlertActionStyleDefault handler:nil]];
-        UIWindow *window = [UIApplication sharedApplication].keyWindow;
-        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
-    });
-}
-
-void apply_anogs_patch() {
-    uintptr_t base = get_lib_base(TARGET_LIB);
+// Hook fonksiyonumuz
+void my_sub_D372C(void *arg0) {
+    LOG(@"sub_D372C çağrıldı! Bypass ediliyor, ekrana yazı bastırılıyor...");
     
-    if (base != 0) {
-        // Hedef Adres = libanogs_base + ofset
-        void *target_addr = (void *)(base + PATCH_OFFSET);
-        
-        // NOP Hex
-        uint8_t nop[] = {0x1F, 0x20, 0x03, 0xD5};
-
-        if (DobbyCodePatch(target_addr, nop, 4) == 0) {
-            show_alert(@"libanogs Kırıldı! ✅");
-        } else {
-            show_alert(@"Dobby Yazma Hatası! ❌");
-        }
-    } else {
-        // Eğer libanogs henüz yüklenmemişse tekrar dene
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            apply_anogs_patch();
-        });
-    }
+    // İstersen orijinal fonksiyonu çağır (açıklama satırını kaldır)
+    // orig_sub_D372C(arg0);
+    
+    // Eğer bypass etmek istiyorsan, burada direkt return et.
+    // Dönüş değeri void varsayıldı, eğer int döndürüyorsa uygun bir değer döndür.
 }
 
+// Constructor: library yüklendiğinde otomatik çalışır
 __attribute__((constructor))
 static void init() {
-    // libanogs oyun açıldıktan biraz sonra yüklenir, o yüzden 15 saniye bekliyoruz
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        apply_anogs_patch();
-    });
+    LOG("Bypass kütüphanesi yükleniyor...");
+    
+    // 1. Hedef image'ın base adresini bul
+    uintptr_t base = 0;
+    // Örnek: "libhedef.dylib" ismini kendi library'nle değiştir
+    const char *target_image = "libhedef.dylib";
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (name && strstr(name, target_image)) {
+            base = (uintptr_t)_dyld_get_image_header(i);
+            LOG("Hedef image bulundu: %s, base = 0x%llx", name, (uint64_t)base);
+            break;
+        }
+    }
+    
+    if (base == 0) {
+        LOG("Hata: %s bulunamadı!", target_image);
+        return;
+    }
+    
+    // 2. Hedef fonksiyon adresini hesapla (offset 0xD372C)
+    void *target_addr = (void *)(base + 0xD372C);
+    LOG("Hedef adres: %p", target_addr);
+    
+    // 3. Dobby hook kur
+    int ret = DobbyHook(target_addr, (void *)my_sub_D372C, (void **)&orig_sub_D372C);
+    if (ret == 0) {
+        LOG("Hook başarıyla kuruldu!");
+    } else {
+        LOG("Hook kurulamadı! Hata kodu: %d", ret);
+    }
 }
