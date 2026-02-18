@@ -1,9 +1,9 @@
 Package: com.baybars.patch
 Name: BaybarsBypass
 Depends: mobilesubstrate
-Version: 0.0.1
+Version: 1.0.0
 Architecture: iphoneos-arm
-Description: Baybars Runtime Memory Patch with Dobby
+Description: Dobby Powered Runtime Bypass
 Maintainer: Baybars
 Author: Baybars
 Section: Tweaks
