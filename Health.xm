@@ -1,65 +1,68 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <mach-o/dyld.h>
-#include <substrate.h> // MSHookFunction için gerekli
+#import <mach/mach.h> // iOS'un öz kütüphanesi
 
-// --- BAYBARS SESSİZ ANONS ---
+// --- BELLEK YAZMA FONKSİYONU (Jailbreak Gerektirmez) ---
+void patchOffset(uintptr_t address, uint32_t data) {
+    mach_port_t task = mach_task_self();
+    kern_return_t kr;
+    
+    // Sayfa korumasını kaldır (Yazılabilir yap)
+    kr = vm_protect(task, (vm_address_t)address, sizeof(data), FALSE, VM_PROT_READ | VM_PROT_WRITE | VM_PROT_COPY);
+    if (kr == KERN_SUCCESS) {
+        // Veriyi yaz (Örn: MOV X0, #0 / RET)
+        *(uint32_t *)address = data;
+        // Korumayı geri yükle
+        vm_protect(task, (vm_address_t)address, sizeof(data), FALSE, VM_PROT_READ | VM_PROT_EXECUTE);
+    }
+}
+
+// --- BAYBARS MESAJ SİSTEMİ ---
 void BaybarsMesaj(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *win = [UIApplication sharedApplication].keyWindow;
-        UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 300, 50)];
-        l.center = CGPointMake(win.frame.size.width / 2, 100);
+        UIWindow *window = nil;
+        for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                window = ((UIWindowScene *)scene).windows.firstObject;
+                break;
+            }
+        }
+        if (!window) return;
+        
+        UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 300, 40)];
+        l.center = CGPointMake(window.frame.size.width / 2, 100);
         l.text = msg;
-        l.textColor = [UIColor yellowColor];
-        l.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+        l.textColor = [UIColor greenColor];
+        l.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
         l.textAlignment = NSTextAlignmentCenter;
-        l.font = [UIFont boldSystemFontOfSize:15];
-        l.layer.cornerRadius = 12;
+        l.layer.cornerRadius = 10;
         l.clipsToBounds = YES;
-        [win addSubview:l];
-        [UIView animateWithDuration:0.5 delay:5.0 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL f){ [l removeFromSuperview]; }];
+        [window addSubview:l];
+        [UIView animateWithDuration:0.5 delay:4.0 options:0 animations:^{ l.alpha = 0; } completion:^(BOOL f){ [l removeFromSuperview]; }];
     });
 }
 
-// --- ANDROID'DEKİ sub_4C9C48'İN İOS HOOK KARŞILIĞI ---
-// Orijinal fonksiyonu saklamak için bir değişken (Eğer orijinali çağırmak gerekirse)
-int (*old_sub_2DF68)(void *a1, void *a2, void *a3);
-
-// BİZİM SAHTE FONKSİYONUMUZ (Hook buraya düşecek)
-int new_sub_2DF68(void *a1, void *a2, void *a3) {
-    // Android kodundaki return 0; mantığı burada!
-    // Ne gelirse gelsin '0' döndürüyoruz ki sistem 'TEMİZ' sansın.
-    return 0; 
-}
-
-// Diğer Ban Noktası (Integrity Check)
-int (*old_sub_F806C)(void *a1);
-int new_sub_F806C(void *a1) {
-    return 0; // Dosya kontrolünü bypass et
-}
-
-// --- ANA HOOK MOTORU ---
 void setupHooks() {
-    // 1. Oyunun hafızadaki başlangıç adresini (Slide) al
     uintptr_t slide = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
-
-    // 2. MSHookFunction ile Fonksiyonları Kancala
-    // Bu yöntem Jailbreak'siz cihazlarda IPA içine gömüldüğünde en stabil olanıdır.
     
-    // AnoSDK Raporlama Hook
-    MSHookFunction((void *)(slide + 0x2DF68), (void *)&new_sub_2DF68, (void **)&old_sub_2DF68);
+    // --- RETURN 0 PATCH (MOV X0, #0 / RET) ---
+    // ARM64 için 'MOV X0, #0' komutu: 0x000080D2
+    // ARM64 için 'RET' komutu: 0xC0035FD6
     
-    // Integrity (Dosya) Kontrolü Hook
-    MSHookFunction((void *)(slide + 0xF806C), (void *)&new_sub_F806C, (void **)&old_sub_F806C);
+    // 0x2DF68 ofsetini sustur (Fonksiyonun en başına RET çakıyoruz)
+    patchOffset(slide + 0x2DF68, 0xD65F03C0); 
+    
+    // 0xF806C ofsetini sustur
+    patchOffset(slide + 0xF806C, 0xD65F03C0);
 
-    BaybarsMesaj(@"Baybars: Non-JB Hook Aktif!");
+    BaybarsMesaj(@"Baybars: Memory Patch Aktif!");
 }
 
-// IPA açıldığında otomatik çalışacak kısım
 __attribute__((constructor))
 static void initialize() {
-    // iOS 17'de oyunun yüklenmesini beklemezsen crash yersin
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // Oyunun lobiye girmesini bekle (iOS 17 Güvenliği için)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         setupHooks();
     });
 }
