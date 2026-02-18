@@ -9,29 +9,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos
+      - name: Setup Theos (Clean Install)
         run: |
-          # Theos'u doğrudan çalışma dizinine kur ki her yerden erişilsin
+          # Theos'u düzgünce indir ve master branch'i çek
           git clone --recursive https://github.com/theos/theos.git $THEOS
           
-      - name: Link System SDK
+      - name: Setup SDK
         run: |
+          # Sistemdeki hazır SDK'yı Theos'a bağla
           mkdir -p $THEOS/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk $THEOS/sdks/iPhoneOS.sdk
 
-      - name: Build
+      - name: Build Tweak
         run: |
-          # THEOS değişkenini burada da tanımlıyoruz
           export THEOS=${{ github.workspace }}/theos
           export PATH="$THEOS/bin:$PATH"
+          # Klasöre girip direkt make çekelim
           make package FINALPACKAGE=1
 
-      - name: Export
+      - name: Export Output
         run: |
           mkdir -p output
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass
+          name: BaybarsBypass-Dylib
           path: output/
