@@ -2,51 +2,63 @@
 #import <mach-o/dyld.h>
 #import <UIKit/UIKit.h>
 
-// Dobby Fonksiyonları (Header dosyasına gerek duymaz)
 extern "C" int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t size);
-extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
 
-// --- SENİN OFSETİN ---
-#define OFS_TST_PATCH  0xD3848  // Resimdeki B.EQ satırı (TST + 4)
+// --- AYARLAR ---
+#define TARGET_LIB "libanogs" // Aradığımız kütüphane
+#define PATCH_OFFSET 0xD3848  // Senin resimdeki ofsetin
 
-void start_memory_patch(uintptr_t base) {
-    // Uygulama açıldıktan 5 saniye sonra patchle ve yazı çıkar
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        if (base == 0) return;
-
-        // 1. ADIM: Belleği Yamala (NOP At)
-        // ARM64 NOP Hex: 1F 20 03 D5
-        uint8_t nop_instr[] = {0x1F, 0x20, 0x03, 0xD5};
-        
-        void *target_addr = (void *)(base + OFS_TST_PATCH);
-        int patch_res = DobbyCodePatch(target_addr, nop_instr, 4);
-
-        // 2. ADIM: Ekrana Bildirim Ver (Senin istediğin o yazı kısmı)
-        NSString *statusMsg = (patch_res == 0) ? @"Patch Başarılı! ✅" : @"Patch Hata Verdi! ❌";
-        
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BEYAZ PATCH" 
-                                       message:[NSString stringWithFormat:@"%@\nAdres: 0x%lx", statusMsg, (uintptr_t)target_addr] 
-                                       preferredStyle:UIAlertControllerStyleAlert];
-        
-        [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-        
-        // En üstteki pencereyi bulup mesajı göster
-        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-        if (rootVC) {
-            [rootVC presentViewController:alert animated:YES completion:nil];
+// Kütüphanenin çalışma zamanındaki base adresini bulur
+uintptr_t get_lib_base(const char *lib_name) {
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (name && strstr(name, lib_name)) {
+            return _dyld_get_image_vmaddr_slide(i) + 0x100000000;
         }
-        
-        NSLog(@"[PatchLog] %@", statusMsg);
+    }
+    return 0;
+}
+
+void show_alert(NSString *msg) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BAYBARS" 
+                                       message:msg 
+                                       preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Gazla" style:UIAlertActionStyleDefault handler:nil]];
+        UIWindow *window = [UIApplication sharedApplication].keyWindow;
+        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
+        [window.rootViewController presentViewController:alert animated:YES completion:nil];
     });
 }
 
-__attribute__((constructor))
-static void initialize() {
-    // Ana binary base adresini al
-    uintptr_t main_base = (uintptr_t)_dyld_get_image_header(0);
+void apply_anogs_patch() {
+    uintptr_t base = get_lib_base(TARGET_LIB);
     
-    // Eğer ASLR 0x100000000'dan başlıyorsa düzeltme gerekebilir 
-    // Ama genellikle _dyld_get_image_header(0) yeterlidir.
-    start_memory_patch(main_base);
+    if (base != 0) {
+        // Hedef Adres = libanogs_base + ofset
+        void *target_addr = (void *)(base + PATCH_OFFSET);
+        
+        // NOP Hex
+        uint8_t nop[] = {0x1F, 0x20, 0x03, 0xD5};
+
+        if (DobbyCodePatch(target_addr, nop, 4) == 0) {
+            show_alert(@"libanogs Kırıldı! ✅");
+        } else {
+            show_alert(@"Dobby Yazma Hatası! ❌");
+        }
+    } else {
+        // Eğer libanogs henüz yüklenmemişse tekrar dene
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            apply_anogs_patch();
+        });
+    }
+}
+
+__attribute__((constructor))
+static void init() {
+    // libanogs oyun açıldıktan biraz sonra yüklenir, o yüzden 15 saniye bekliyoruz
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        apply_anogs_patch();
+    });
 }
