@@ -2,73 +2,88 @@
 #import <mach-o/dyld.h>
 #import <dlfcn.h>
 #import <UIKit/UIKit.h>
-#include <sys/mman.h>
 
-// --- BELLEK YAZMA YARDIMCISI (PATCH) ---
-// Dobby'nin hook yazarken bıraktığı izden kaçınmak için direkt hafızayı yamalıyoruz
-bool patch_memory(void* address, uint32_t instruction) {
-    size_t pageSize = sysconf(_SC_PAGESIZE);
-    uintptr_t start = (uintptr_t)address & ~(pageSize - 1);
-    
-    // Yazma izni al
-    if (mprotect((void*)start, pageSize, PROT_READ | PROT_WRITE | PROT_EXEC) == 0) {
-        *(uint32_t*)address = instruction; // Yeni komutu yaz
-        mprotect((void*)start, pageSize, PROT_READ | PROT_EXEC); // İzni geri al
-        return true;
-    }
-    return false;
+// --- DOBBY MOTORU ---
+extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
+
+// --- ANALIZINDEN GELEN OFSETLER ---
+#define OFS_ROOT      0x63D4    // root_alert
+#define OFS_CHEAT     0x4A130   // cheat_open_id
+#define OFS_SC_PROT   0x7B2A8   // sc_protect
+#define OFS_TCJ_PROT  0x815C4   // tcj_protect
+#define OFS_ABORT     0xF0CBC   // Abort kararı
+#define OFS_HB_CHECK  0x447B0   // Heartbeat check
+
+// --- ORIJINAL FONKSIYON TRAMPOLINLERI ---
+static void (*orig_root)(void*);
+static void (*orig_cheat)(void);
+static int  (*orig_sc)(void*, void*, int, void*);
+static int  (*orig_tcj)(void*, void*, void*, void*, void*, void*);
+static int  (*orig_abort)(void*);
+static void (*orig_hb)(void*);
+
+// --- TRAMPOLIN HANDLERS (Susturucu ve Kandırıcı) ---
+
+// Root uyarısını yut
+void hook_root(void* arg) {
+    // Orijinali çağırmıyoruz, raporu engelliyoruz.
+    return; 
 }
 
-// --- UI BİLDİRİM ---
-void baybars_alert(NSString *msg) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].keyWindow ?: [UIApplication sharedApplication].windows.firstObject;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Baybars v16" message:msg preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
-    });
+// Hile tespitini yut
+void hook_cheat() {
+    return;
+}
+
+// SC_PROTECT: En kritik yer. Orijinali çalıştır ama sonucu hep 0 (BAŞARILI) yap.
+int hook_sc(void* a, void* b, int c, void* d) {
+    if (orig_sc) orig_sc(a, b, c, d); 
+    return 0; // "Bütünlük Tamam"
+}
+
+// TCJ_PROTECT: Orijinali çalıştır, sonucu 0 yap.
+int hook_tcj(void* a, void* b, void* c, void* d, void* e, void* f) {
+    if (orig_tcj) orig_tcj(a, b, c, d, e, f);
+    return 0; // "Tencent Koruması Tamam"
+}
+
+// Abort Kararı: Direkt engelle
+int hook_abort(void* a1) {
+    return 0; // "Kapatma Kararı Reddedildi"
 }
 
 // --- ANA MOTOR ---
-void apply_memory_patch(uintptr_t base) {
-    // 30 saniye sonra yama yap (Oyunun tüm taramaları bir tur dönsün, sakinleşsin)
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+void start_baybars_engine(uintptr_t base) {
+    // Analizindeki sistemlerin oturması için 20 saniye bekle
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         
         if (base == 0) return;
 
-        /* ANALİZ: sub_F0CBC (Abort Decision)
-           Bu fonksiyonu kökten yamalıyoruz:
-           MOV X0, #0 (0x2A0003D2) -> ARM64 karşılığı
-           RET        (0xD65F03C0) -> ARM64 karşılığı
-        */
-        
-        void* abort_addr = (void *)(base + 0xF0CBC);
-        
-        // İlk komutu 'MOV X0, #0' yap
-        bool p1 = patch_memory(abort_addr, 0xD2800000); 
-        // İkinci komutu 'RET' yap
-        bool p2 = patch_memory((void*)((uintptr_t)abort_addr + 4), 0xD65F03C0);
+        // 1. Root & Cheat (Rapocuları sustur)
+        DobbyHook((void *)(base + OFS_ROOT), (void *)hook_root, (void **)&orig_root);
+        DobbyHook((void *)(base + OFS_CHEAT), (void *)hook_cheat, (void **)&orig_cheat);
 
-        if (p1 && p2) {
-            baybars_alert(@"V16: Bellek Yaması Aktif! Abort Engellendi. ✅");
-        } else {
-            baybars_alert(@"V16: Yama Başarısız!");
-        }
+        // 2. SC & TCJ (Bütünlük ve Koruma Sistemlerini Kandır - TRAMBOLİN)
+        DobbyHook((void *)(base + OFS_SC_PROT), (void *)hook_sc, (void **)&orig_sc);
+        DobbyHook((void *)(base + OFS_TCJ_PROT), (void *)hook_tcj, (void **)&orig_tcj);
+
+        // 3. Abort (Son Savunma Hattı)
+        DobbyHook((void *)(base + OFS_ABORT), (void *)hook_abort, (void **)&orig_abort);
+
+        // Başarı Mesajı
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BAYBARS V18" 
+                                           message:@"Trambolin Hooklar Aktif!\nMRPCS Devre Dışı. ✅" 
+                                           preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"Gazla" style:UIAlertActionStyleDefault handler:nil]];
+            [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+        });
     });
-}
-
-// --- DİNAMİK MODÜL YAKALAYICI ---
-void image_added_callback(const struct mach_header *mh, intptr_t vmaddr_slide) {
-    Dl_info info;
-    if (dladdr(mh, &info)) {
-        const char *name = info.dli_fname;
-        if (name && (strstr(name, "Anogs") || strstr(name, "anogs"))) {
-            apply_memory_patch((uintptr_t)vmaddr_slide);
-        }
-    }
 }
 
 __attribute__((constructor))
 static void initialize() {
-    _dyld_register_func_for_add_image(image_added_callback);
+    // Ana binary (ShadowTrackerExtra) base adresini al
+    uintptr_t main_base = (uintptr_t)_dyld_get_image_header(0);
+    start_baybars_engine(main_base);
 }
