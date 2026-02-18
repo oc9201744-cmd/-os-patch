@@ -1,47 +1,52 @@
-#include <Foundation/Foundation.h>
-#include <mach-o/dyld.h>
-#include <stdint.h>
-#include <string.h>
+#import <Foundation/Foundation.h>
+#import <mach-o/dyld.h>
+#import <UIKit/UIKit.h>
 
-// Dobby'nin fonksiyonunu dışarıdan (libdobby.a) manuel olarak çağırıyoruz
+// Dobby Fonksiyonları (Header dosyasına gerek duymaz)
 extern "C" int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t size);
+extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
 
-// ASLR (Adres Kayması) hesaplama
-uintptr_t get_base_address(const char *image_name) {
-    uint32_t count = _dyld_image_count();
-    for (uint32_t i = 0; i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (name && strstr(name, image_name)) {
-            // ARM64 iOS uygulamaları genellikle 0x100000000 base adresinden başlar
-            return _dyld_get_image_vmaddr_slide(i) + 0x100000000;
-        }
-    }
-    return 0;
-}
+// --- SENİN OFSETİN ---
+#define OFS_TST_PATCH  0xD3848  // Resimdeki B.EQ satırı (TST + 4)
 
-void apply_patches() {
-    // BURAYI DEĞİŞTİR: Hedef uygulama adı
-    const char *targetBin = "HedefUygulama"; 
-    
-    uintptr_t base = get_base_address(targetBin);
-    if (base != 0) {
-        // Ofset: Resimdeki TST'den sonraki satır (B.EQ)
-        // loc_D3844 + 4 byte = 0xD3848
-        void *patch_addr = (void *)(base + 0xD3848);
+void start_memory_patch(uintptr_t base) {
+    // Uygulama açıldıktan 5 saniye sonra patchle ve yazı çıkar
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        
+        if (base == 0) return;
 
+        // 1. ADIM: Belleği Yamala (NOP At)
         // ARM64 NOP Hex: 1F 20 03 D5
-        uint8_t nop_patch[] = {0x1F, 0x20, 0x03, 0xD5};
+        uint8_t nop_instr[] = {0x1F, 0x20, 0x03, 0xD5};
+        
+        void *target_addr = (void *)(base + OFS_TST_PATCH);
+        int patch_res = DobbyCodePatch(target_addr, nop_instr, 4);
 
-        if (DobbyCodePatch(patch_addr, nop_patch, 4) == 0) {
-            NSLog(@"[Patch] Başarılı: 0x%lx adresine NOP yazıldı.", (uintptr_t)patch_addr);
+        // 2. ADIM: Ekrana Bildirim Ver (Senin istediğin o yazı kısmı)
+        NSString *statusMsg = (patch_res == 0) ? @"Patch Başarılı! ✅" : @"Patch Hata Verdi! ❌";
+        
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"BEYAZ PATCH" 
+                                       message:[NSString stringWithFormat:@"%@\nAdres: 0x%lx", statusMsg, (uintptr_t)target_addr] 
+                                       preferredStyle:UIAlertControllerStyleAlert];
+        
+        [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
+        
+        // En üstteki pencereyi bulup mesajı göster
+        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+        if (rootVC) {
+            [rootVC presentViewController:alert animated:YES completion:nil];
         }
-    }
+        
+        NSLog(@"[PatchLog] %@", statusMsg);
+    });
 }
 
 __attribute__((constructor))
-static void init() {
-    // Uygulama belleğe yüklendikten 1 saniye sonra patchle
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        apply_patches();
-    });
+static void initialize() {
+    // Ana binary base adresini al
+    uintptr_t main_base = (uintptr_t)_dyld_get_image_header(0);
+    
+    // Eğer ASLR 0x100000000'dan başlıyorsa düzeltme gerekebilir 
+    // Ama genellikle _dyld_get_image_header(0) yeterlidir.
+    start_memory_patch(main_base);
 }
