@@ -1,9 +1,9 @@
-Package: com.baybars.bypass
+Package: com.baybars.patch
 Name: BaybarsBypass
 Depends: mobilesubstrate
-Version: 1.0.0
+Version: 0.0.1
 Architecture: iphoneos-arm
-Description: Anogs Framework Memory Patch for Non-Jailbreak.
+Description: Baybars Runtime Memory Patch with Dobby
 Maintainer: Baybars
 Author: Baybars
 Section: Tweaks
