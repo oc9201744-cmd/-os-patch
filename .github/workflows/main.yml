@@ -1,4 +1,4 @@
-name: Build Dobby iOS
+name: Build Dobby iOS (Static)
 
 on:
   workflow_dispatch:
@@ -8,30 +8,24 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Clone Dobby
         run: |
-          git clone --depth=1 https://github.com/jmpews/Dobby.git dobby_src
+          git clone https://github.com/jmpews/Dobby.git
+          cd Dobby
+          git submodule update --init --recursive
 
-      - name: Configure CMake (iOS)
+      - name: Build Dobby iOS arm64
         run: |
-          cd dobby_src
-          mkdir build && cd build
-          cmake .. \
-            -G Xcode \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
-
-      - name: Build Dobby (NO CODESIGN)
-        run: |
-          cd dobby_src/build
+          cd Dobby
           xcodebuild \
-            -configuration Release \
+            -project dobby.xcodeproj \
             -scheme dobby \
             -sdk iphoneos \
+            -arch arm64 \
+            -configuration Release \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -40,5 +34,5 @@ jobs:
       - name: Upload libdobby.a
         uses: actions/upload-artifact@v4
         with:
-          name: libdobby
-          path: dobby_src/build/Release-iphoneos/libdobby.a
+          name: libdobby-ios-arm64
+          path: Dobby/build/Release-iphoneos/libdobby.a
