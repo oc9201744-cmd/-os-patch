@@ -18,17 +18,17 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Setup Dobby Library (iOS Arm64/Arm64e)
+      - name: Setup Dobby Library
         run: |
           mkdir -p include
-          # iOS için özel derlenmiş libdobby.a ve header dosyasını indiriyoruz
+          # iOS için hazır derlenmiş Dobby ve Header indir
           curl -Lk "https://github.com/m4fn3/Dobby/releases/download/v1.0.0/libdobby.a" -o libdobby.a
           curl -Lk "https://raw.githubusercontent.com/jmpews/Dobby/master/include/dobby.h" -o include/dobby.h
           
           if [ -f "./libdobby.a" ]; then
             echo "✅ Dobby kütüphanesi hazır."
           else
-            echo "❌ Kütüphane indirilemedi!"
+            echo "❌ Hata: libdobby.a indirilemedi!"
             exit 1
           fi
 
@@ -36,19 +36,20 @@ jobs:
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Paketleme hatası almamak için sadece dylib üretelim
+          # 'all' kullanarak sadece dylib üretimine odaklanıyoruz
+          # Hata olursa burada duracak ve bize nedenini söyleyecek
           make all FINALPACKAGE=1 CODESIGN_IPA=0 AD_HOC=1
-        continue-on-error: true
 
       - name: Export Output
         run: |
           mkdir -p output
+          # Derlenen dylib dosyasını bulup taşıyoruz
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           
           if [ -f "output/BaybarsBypass.dylib" ]; then
             echo "✅ Bypass başarıyla oluşturuldu."
           else
-            echo "❌ Hata: Dylib dosyası üretilemedi!"
+            echo "❌ Hata: Dylib dosyası üretilemedi! Tweak.xm veya Makefile kontrol edilmeli."
             exit 1
           fi
 
