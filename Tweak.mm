@@ -4,7 +4,7 @@
 #import <UIKit/UIKit.h>
 
 extern "C" {
-    int DobbyHook(void *address, void *replace_call, void **origin_call);
+    // Dobby'nin sadece patch motorunu kullanacağız
     int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
 }
 
@@ -31,54 +31,42 @@ void baybars_alert(NSString *title, NSString *msg) {
     });
 }
 
-// --- HOOKLAR (Senin Analizlerin: bak 4.txt & bak 6.txt) ---
-void *(*orig_sub_F838C)(void *a1, void *a2, unsigned long a3, void *a4);
-void *new_sub_F838C(void *a1, void *a2, unsigned long a3, void *a4) { 
-    return NULL; 
-}
-
-void (*orig_sub_F012C)(void *a1);
-void new_sub_F012C(void *a1) { 
-    return; 
-}
-
-// --- ANA BYPASS (KONTROLLÜ) ---
-void apply_baybars_bypass(uintptr_t base) {
-    // 30 saniye boyunca bekle, bu sırada oyun açılış kontrollerini yapsın.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+// --- SESSİZ OPERASYON ---
+void start_silent_operation(uintptr_t base) {
+    // Süreyi 20 saniyeye çektim, çok geç kalırsak watchdog uyanabilir
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
         
-        // SON KONTROL: Adres hala geçerli mi?
-        if (base == 0) {
-            baybars_alert(@"HATA", @"Anogs adresi bulunamadı, bypass iptal!");
-            return;
-        }
+        if (base == 0) return;
 
-        // Hookları Dobby ile çakıyoruz
-        DobbyHook((void *)(base + 0xF838C), (void *)new_sub_F838C, (void **)&orig_sub_F838C);
-        DobbyHook((void *)(base + 0xF012C), (void *)new_sub_F012C, (void **)&orig_sub_F012C);
+        // ARM64 için 'RET' komutu (0xD65F03C0)
+        // Fonksiyonun en başına bunu yazarsak, fonksiyon içeriğini çalıştırmadan geri döner.
+        uint32_t ret_opcode = 0xD65F03C0;
+        uint32_t nop_opcode = 0xD503201F;
 
-        uint32_t nop = 0xD503201F;
-        DobbyCodePatch((void *)(base + 0xD3844), (uint8_t *)&nop, 4);
+        // Hook yerine doğrudan Patch yapıyoruz:
+        // 1. Dispatcher: Geri dön!
+        DobbyCodePatch((void *)(base + 0xF838C), (uint8_t *)&ret_opcode, 4);
+        
+        // 2. ACE Modül: Başlama, geri dön!
+        DobbyCodePatch((void *)(base + 0xF012C), (uint8_t *)&ret_opcode, 4);
 
-        baybars_alert(@"BAŞARILI", @"Anogs bulundu ve 30 sn sonra hooklandı! ✅");
+        // 3. Kritik Kontrol Noktası: NOP (Geç!)
+        DobbyCodePatch((void *)(base + 0xD3844), (uint8_t *)&nop_opcode, 4);
+
+        baybars_alert(@"Baybars", @"Sessiz Patch 20. sn'de Tamamlandı! ✅");
     });
 }
 
-// --- DİNAMİK YAKALAYICI ---
 void image_added_callback(const struct mach_header *mh, intptr_t vmaddr_slide) {
     Dl_info info;
     if (dladdr(mh, &info)) {
-        const char *name = info.dli_fname;
-        // Kütüphane adı kontrolü
-        if (name && (strstr(name, "Anogs") || strstr(name, "anogs"))) {
-            // Bulundu! Şimdi gecikmeli işleme gönder.
-            apply_baybars_bypass((uintptr_t)vmaddr_slide);
+        if (info.dli_fname && (strstr(info.dli_fname, "Anogs") || strstr(info.dli_fname, "anogs"))) {
+            start_silent_operation((uintptr_t)vmaddr_slide);
         }
     }
 }
 
 __attribute__((constructor))
 static void initialize() {
-    // Kütüphane yüklendiğinde haber vermesi için sisteme kaydoluyoruz
     _dyld_register_func_for_add_image(image_added_callback);
 }
