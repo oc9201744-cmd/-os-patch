@@ -18,13 +18,12 @@ jobs:
           mkdir -p ~/theos/sdks
           ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
-      - name: Download and Build Dobby (BepInEx)
+      - name: Build Dobby (BepInEx)
         run: |
           git clone --recursive https://github.com/BepInEx/Dobby.git dobby_src
           cd dobby_src
           mkdir build && cd build
           
-          # PAC ve iOS için CMake ayarları
           cmake .. -G Xcode \
           -DCMAKE_SYSTEM_NAME=iOS \
           -DCMAKE_OSX_ARCHITECTURES="arm64;arm64e" \
@@ -32,47 +31,47 @@ jobs:
           -DDOBBY_GENERATE_SHARED=OFF \
           -DDOBBY_DEBUG=OFF
           
-          # Derleme
           xcodebuild -configuration Release -target dobby -sdk iphoneos
           
           cd ../..
           mkdir -p include
           
-          # Header'ı kopyala
+          # Header dosyasını taşı
           cp dobby_src/include/dobby.h include/
           
-          # KRİTİK NOKTA: Dosyayı nerede olursa olsun bul ve ana dizine getir
-          find dobby_src/build -name "libdobby.a" -exec cp {} ./libdobby.a \;
+          # Kütüphaneyi bul ve ana dizine libdobby.a olarak taşı
+          # find komutu ile her ihtimale karşı tüm build klasörünü tarıyoruz
+          find dobby_src/build -name "*.a" -exec cp {} ./libdobby.a \;
           
           if [ -f "./libdobby.a" ]; then
-            echo "Dobby kütüphanesi başarıyla bulundu!"
+            echo "✅ libdobby.a başarıyla hazırlandı."
           else
-            echo "Hata: libdobby.a hala bulunamadı!"
+            echo "❌ Hata: libdobby.a bulunamadı!"
             exit 1
           fi
 
-      - name: Build Tweak with Dobby
+      - name: Build Tweak
         run: |
           export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Sadece dylib üretmek için 'all' kullanabiliriz, paketleme hatasını engeller
-          make all FINALPACKAGE=1 codesign=0 AD_HOC=1
+          # 'make all' kullanarak paketleme (deb) hatalarını atlıyoruz, sadece dylib odaklıyız
+          make all FINALPACKAGE=1 CODESIGN_IPA=0 AD_HOC=1
         continue-on-error: true
 
       - name: Export Output
         run: |
           mkdir -p output
-          # .theos içindeki derlenmiş dylib'i kurtar
+          # Derlenen dylib'i bul ve kopyala
           find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
           
           if [ -f "output/BaybarsBypass.dylib" ]; then
-            echo "Dylib başarıyla oluşturuldu!"
+            echo "✅ Dylib başarıyla oluşturuldu."
           else
-            echo "Hata: Dylib dosyası bulunamadı!"
+            echo "❌ Hata: Dylib dosyası üretilemedi. Makefile veya Tweak.xm kontrol edilmeli."
             exit 1
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass_Dobby_Final
+          name: BaybarsBypass_Dobby
           path: output/
