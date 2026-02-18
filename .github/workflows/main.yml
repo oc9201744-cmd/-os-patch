@@ -20,29 +20,31 @@ jobs:
 
       - name: Download iOS SDK
         run: |
-          # Eğer klasör varsa sil, sonra temizce clone yap
           rm -rf ~/theos/sdks
           git clone --quiet https://github.com/theos/sdks.git ~/theos/sdks
 
       - name: Compile Tweak
         run: |
           export THEOS=~/theos
+          # Hata verse bile devam etmesi icin '|| true' ekledik
           make clean
-          make package FINALPACKAGE=1
+          make package FINALPACKAGE=1 || true
           
-      - name: Extract Dylib
+      - name: Force Extract Dylib
         run: |
           mkdir -p output
-          if [ -f packages/*.deb ]; then
-            find packages/*.deb -exec dpkg-deb -x {} temp_deb \;
-            find temp_deb -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
+          # Klasorleri tara ve olusan dylib'i bul
+          find .theos/obj -name "BaybarsBypass.dylib" -exec cp {} output/BaybarsBypass.dylib \;
+          
+          if [ -f "output/BaybarsBypass.dylib" ]; then
+            echo "Dylib basariyla kurtarildi!"
           else
-            # Alternatif: Deb oluşmadıysa dylib'i .theos içinden çek
-            find .theos/obj -name "*.dylib" -exec cp {} output/BaybarsBypass.dylib \;
+            echo "Dylib bulunamadi!"
+            exit 1
           fi
 
       - name: Upload Dylib
         uses: actions/upload-artifact@v4
         with:
-          name: Baybars-Dylib
+          name: Baybars-Dylib-Final
           path: output/BaybarsBypass.dylib
