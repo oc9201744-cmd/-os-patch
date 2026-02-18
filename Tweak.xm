@@ -3,8 +3,14 @@
 #import <dlfcn.h>
 #include <stdint.h>
 
-// Fonksiyonu dışarıdan çağırıyoruz
-extern "C" int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
+// Dobby fonksiyonunu C linkage ile çağırıyoruz
+#ifdef __cplusplus
+extern "C" {
+#endif
+    int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
+#ifdef __cplusplus
+}
+#endif
 
 static void* clean_ptr(void* ptr) {
 #if defined(__arm64e__)
@@ -22,11 +28,9 @@ static void on_load(const struct mach_header *mh, intptr_t slide) {
             void *target_addr = (void *)(slide + offset);
             void *final_addr = clean_ptr(target_addr);
             
-            uint32_t patch_hex = 0x52801801; // MOV W1, #0xC0
+            uint32_t patch_hex = 0x52801801; 
             
-            if (DobbyCodePatch(final_addr, (uint8_t *)&patch_hex, sizeof(patch_hex)) == 0) {
-                NSLog(@"[Baybars] BYPASS OK: %p", final_addr);
-            }
+            DobbyCodePatch(final_addr, (uint8_t *)&patch_hex, sizeof(patch_hex));
         }
     }
 }
