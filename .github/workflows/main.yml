@@ -4,27 +4,26 @@ on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: macos-latest
-    env:
-      THEOS: ${{ github.workspace }}/theos
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Theos (Clean Install)
+      - name: Setup Theos (Properly)
         run: |
-          # Theos'u düzgünce indir ve master branch'i çek
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-          
+          # Theos'u derinlemesine klonla
+          git clone --recursive https://github.com/theos/theos.git ~/theos
+          echo "THEOS=~/theos" >> $GITHUB_ENV
+          echo "~/theos/bin" >> $GITHUB_PATH
+
       - name: Setup SDK
         run: |
-          # Sistemdeki hazır SDK'yı Theos'a bağla
-          mkdir -p $THEOS/sdks
-          ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk $THEOS/sdks/iPhoneOS.sdk
+          mkdir -p ~/theos/sdks
+          ln -s /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk ~/theos/sdks/iPhoneOS.sdk
 
       - name: Build Tweak
         run: |
-          export THEOS=${{ github.workspace }}/theos
+          # Değişkenleri tekrar export et (GitHub bazen unutuyor)
+          export THEOS=~/theos
           export PATH="$THEOS/bin:$PATH"
-          # Klasöre girip direkt make çekelim
           make package FINALPACKAGE=1
 
       - name: Export Output
@@ -34,5 +33,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: BaybarsBypass-Dylib
+          name: BaybarsBypass
           path: output/
