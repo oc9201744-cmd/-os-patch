@@ -11,31 +11,35 @@ jobs:
     
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          # İmzalama hatasını çözmek için ldid ve diğer araçları kurar
+          brew install ldid dpkg
 
       - name: Install Theos
         run: |
           export THEOS=~/theos
           rm -rf $THEOS
           git clone --recursive https://github.com/theos/theos.git $THEOS
+          # SDK çakışmasını önlemek için temiz kurulum
           rm -rf $THEOS/sdks
           git clone --quiet https://github.com/theos/sdks.git $THEOS/sdks
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-      - name: Debug - List Files
-        run: |
-          echo "--- Mevcut Dosyalar ---"
-          ls -R
-          echo "-----------------------"
-
       - name: Compile Tweak
         run: |
+          # Makefile'daki ayarları kullanarak paketi oluşturur
           make package FINALPACKAGE=1
         env:
           THEOS: ${{ env.THEOS }}
 
-      - name: Upload Artifact (v4)
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AnogsBypass-Deb
+          name: AnogsBypass-arm64e-Deb
           path: packages/*.deb
+          if-no-files-found: error
