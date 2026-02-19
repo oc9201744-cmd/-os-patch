@@ -1,4 +1,4 @@
-name: Build Anogs Bypass
+name: Anogs Bypass Build (v4)
 
 on:
   push:
@@ -7,34 +7,33 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
-
+    runs-on: macos-14 # Daha hızlı ve güncel ARM64 runner
+    
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4 # v4 kullanıyoruz
         with:
           submodules: recursive
 
-      - name: Setup Theos
+      - name: Install Theos
         run: |
-          export THEOS=/Users/runner/work/theos
+          export THEOS=~/theos
           git clone --recursive https://github.com/theos/theos.git $THEOS
+          # SDK'ları çek (iOS 14-16 arası destek için)
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-      - name: Setup SDK
+      - name: Compile Tweak
         run: |
-          git clone https://github.com/theos/sdks.git $THEOS/sdks
-
-      - name: Build Tweak
-        run: |
-          # Dobby kütüphanesinin nerede olduğunu Makefile'a anlatmamız lazım
-          # -Iinclude: dobby.h için
-          # -Llibs -ldobby: libdobby.a için
+          # Makefile'daki include ve lib yollarını otomatik görür
           make package FINALPACKAGE=1
         env:
           THEOS: ${{ env.THEOS }}
 
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload Artifact (v4)
+        uses: actions/upload-artifact@v4 # Artifacts v4
         with:
-          name: AnogsBypass-Deb
+          name: AnogsBypass-v4
           path: packages/*.deb
+          if-no-files-found: error
+          retention-days: 5
