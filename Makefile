@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BypassTweak
 
-# İsim birebir aynı olmalı: Tweak.mm
+# Dosya ismin GitHub'da neyse o olmalı. Eğer Tweak.mm ise:
 $(TWEAK_NAME)_FILES = Tweak.mm
 
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -Iinclude
