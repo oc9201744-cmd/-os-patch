@@ -1,47 +1,40 @@
-name: Baybars-Build-Engine
+name: Build Anogs Bypass
 
 on:
-  workflow_dispatch: # Manuel başlatma butonu
+  push:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  build-ios:
+  build:
     runs-on: macos-latest
-    
+
     steps:
-      - name: Repoyu Cek
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
 
-      - name: Xcode Ortamini Hazirla
+      - name: Setup Theos
         run: |
-          # Hatalı xcode-select yollarını temizle ve varsayılanı kullan
-          sudo xcode-select -r
-          xcrun --sdk iphoneos --show-sdk-path
-          
-      - name: CMAKE Kurulumu
-        run: |
-          # Eğer yüklü değilse kur, yüklüyse güncelleme yapma (vakit kazan)
-          if ! command -v cmake &> /dev/null; then
-            brew install cmake
-          fi
+          export THEOS=/Users/runner/work/theos
+          git clone --recursive https://github.com/theos/theos.git $THEOS
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-      - name: Build Scriptini Calistir
+      - name: Setup SDK
         run: |
-          chmod +x build.sh
-          # Ortam değişkenlerini script'e hazır veriyoruz
-          export TARGET_OS="ios"
-          export BUILD_TYPE="Release"
-          
-          # Scripti çalıştır (Hikari kapalı, CMake ile)
-          ./build.sh -s cmake -t Release -h OFF -o ios
-        
-      - name: Dylibleri Topla ve Yukle
-        if: success()
-        uses: actions/upload-artifact@v4
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
+
+      - name: Build Tweak
+        run: |
+          # Dobby kütüphanesinin nerede olduğunu Makefile'a anlatmamız lazım
+          # -Iinclude: dobby.h için
+          # -Llibs -ldobby: libdobby.a için
+          make package FINALPACKAGE=1
+        env:
+          THEOS: ${{ env.THEOS }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: Baybars-Final-Dylib
-          path: |
-            release/ios/*.dylib
-            release/ios/*.tar.gz
-            cmake-build-Release/*.dylib
+          name: AnogsBypass-Deb
+          path: packages/*.deb
