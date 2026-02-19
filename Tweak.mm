@@ -6,59 +6,80 @@
 extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
 
 uintptr_t anogs_base = 0;
-size_t anogs_size = 0x100000; // Yaklaşık boyut, çalışma anında netleşir
-void *anogs_backup = NULL; // Orijinal dosyanın tertemiz kopyası
+void *anogs_backup = NULL;
+size_t anogs_size = 0x200000; // Analiz.txt'ye göre kapsamı genişlettik
 
 int (*orig_memcmp)(const void *s1, const void *s2, size_t n);
-int (*orig_bcmp)(const void *s1, const void *s2, size_t n);
 
-// BÜYÜK KÖR ETME: Tarama anogs bölgesine dokunduğu anda orijinal yedeği göster
-int fake_memory_check(const void *s1, const void *s2, size_t n, int (*orig_func)(const void*, const void*, size_t)) {
+// HER ŞEYİ KAPSAYAN YALANCI MEMCMP
+int new_memcmp(const void *s1, const void *s2, size_t n) {
     uintptr_t addr1 = (uintptr_t)s1;
     uintptr_t addr2 = (uintptr_t)s2;
 
-    // Eğer taranan yer anogs'un içindeyse
+    // Eğer anogs bulunmuşsa ve tarama oraya çarpıyorsa
     if (anogs_base != 0 && anogs_backup != NULL) {
+        // addr1 anogs içindeyse
         if (addr1 >= anogs_base && addr1 < (anogs_base + anogs_size)) {
-            uintptr_t offset = addr1 - anogs_base;
-            return orig_func((void *)((uintptr_t)anogs_backup + offset), s2, n);
+            size_t offset = addr1 - anogs_base;
+            return orig_memcmp((void *)((uintptr_t)anogs_backup + offset), s2, n);
         }
+        // addr2 anogs içindeyse
         if (addr2 >= anogs_base && addr2 < (anogs_base + anogs_size)) {
-            uintptr_t offset = addr2 - anogs_base;
-            return orig_func(s1, (void *)((uintptr_t)anogs_backup + offset), n);
+            size_t offset = addr2 - anogs_base;
+            return orig_memcmp(s1, (void *)((uintptr_t)anogs_backup + offset), n);
         }
     }
-    return orig_func(s1, s2, n);
+    return orig_memcmp(s1, s2, n);
 }
 
-int new_memcmp(const void *s1, const void *s2, size_t n) {
-    return fake_memory_check(s1, s2, n, orig_memcmp);
+// Popup'ı en güvenli şekilde göster
+void show_stealth_popup() {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(7 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIWindow *win = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    win = ((UIWindowScene *)scene).windows.firstObject;
+                    break;
+                }
+            }
+        }
+        if (!win) win = [UIApplication sharedApplication].windows.firstObject;
+
+        if (win.rootViewController) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"System" 
+                                                                           message:@"Stealth Mode Active" 
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [win.rootViewController presentViewController:alert animated:YES completion:nil];
+        }
+    });
 }
 
-int new_bcmp(const void *s1, const void *s2, size_t n) {
-    return fake_memory_check(s1, s2, n, (int (*)(const void*, const void*, size_t))orig_bcmp);
-}
-
+// DYLIB YÜKLENDİĞİ AN ÇALIŞIR (En kritik nokta)
 __attribute__((constructor))
-static void super_stealth_init() {
+static void global_init() {
+    // 1. ÖNCE FONKSİYONU ELE GEÇİR (Hangi kütüphane olursa olsun tarama kör edilsin)
+    void *m_ptr = dlsym(RTLD_DEFAULT, "memcmp");
+    if (m_ptr) {
+        DobbyHook(m_ptr, (void *)new_memcmp, (void **)&orig_memcmp);
+    }
+
+    // 2. ANOGS'U SESSİZCE ARA
     for (uint32_t i = 0; i < _dyld_image_count(); i++) {
         const char *name = _dyld_get_image_name(i);
         if (name && strstr(name, "anogs")) {
             anogs_base = (uintptr_t)_dyld_get_image_vmaddr_slide(i);
             
-            // ANOGS'UN TEMİZ KOPYASINI AL (Tarayıcıyı kandırmak için)
-            // Bu kısımda anogs'un orijinal byte'larını hafızaya yedekliyoruz
+            // Orijinal halini hemen yedekle (Kendi yamanı yapmadan önce!)
             anogs_backup = malloc(anogs_size);
-            memcpy(anogs_backup, (void *)anogs_base, anogs_size); 
+            memcpy(anogs_backup, (void *)anogs_base, anogs_size);
+            
+            // 3. ŞİMDİ ASIL YAMANI YAP (0x4224 adresine zıplama koy)
+            // Burada senin "Custom Code" fonksiyonunu bağlayabilirsin.
+            
+            show_stealth_popup();
             break;
         }
-    }
-
-    if (anogs_base != 0) {
-        void *m_ptr = dlsym(RTLD_DEFAULT, "memcmp");
-        void *b_ptr = dlsym(RTLD_DEFAULT, "bcmp");
-        
-        if (m_ptr) DobbyHook(m_ptr, (void *)new_memcmp, (void **)&orig_memcmp);
-        if (b_ptr) DobbyHook(b_ptr, (void *)new_bcmp, (void **)&orig_bcmp);
     }
 }
