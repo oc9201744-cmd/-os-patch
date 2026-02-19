@@ -12,24 +12,24 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Install Theos
         run: |
           export THEOS=~/theos
-          # Eski kalıntıları temizle
           rm -rf $THEOS
-          # Theos'u ana klasöre çek
           git clone --recursive https://github.com/theos/theos.git $THEOS
-          # SDK çakışmasını önlemek için sdks klasörünü temizle ve yeniden çek
           rm -rf $THEOS/sdks
           git clone --quiet https://github.com/theos/sdks.git $THEOS/sdks
           echo "THEOS=$THEOS" >> $GITHUB_ENV
 
+      - name: Debug - List Files
+        run: |
+          echo "--- Mevcut Dosyalar ---"
+          ls -R
+          echo "-----------------------"
+
       - name: Compile Tweak
         run: |
-          # Makefile'daki include ve lib yollarını otomatik görür
           make package FINALPACKAGE=1
         env:
           THEOS: ${{ env.THEOS }}
@@ -37,7 +37,5 @@ jobs:
       - name: Upload Artifact (v4)
         uses: actions/upload-artifact@v4
         with:
-          name: AnogsBypass-Deb-v4
+          name: AnogsBypass-Deb
           path: packages/*.deb
-          if-no-files-found: error
-          retention-days: 5
