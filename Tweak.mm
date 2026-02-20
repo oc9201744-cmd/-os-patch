@@ -1,55 +1,63 @@
+// Sistem başlıklarını Dobby'den önce ekleyerek modül hatasını çözüyoruz
 #include <sys/types.h>
 #include <stdio.h>
 #include <string.h>
 #include <mach-o/dyld.h>
 #include <dlfcn.h>
+#include <stdint.h>
 
-// Dobby kütüphanesi (Hooking için)
+// Dobby'yi dahil et
 #include "dobby.h"
 
-// --- Ofset Tanımlamaları (Analiz.txt dosyasından) ---
-[span_0](start_span)// Not: 0x23398 ofseti veri raporlama ve SDK kontrolleri için kritiktir[span_0](end_span).
-#define OFFSET_REPORT_DATA 0x23398 
-#define OFFSET_IOCTL_OLD   0x2342C
+// --- Ofsetler (Analiz.txt dosyasından alınan statik adresler) ---
+// Not: Bu adresler anogs.framework içindeki statik adreslerdir.
+#define OFFSET_9014_INTEGRITY 0x11824
+#define OFFSET_ROOT_ALERT      0x63D4
+#define OFFSET_REPORT_DATA     0x23398
 
-// --- Hook Fonksiyonları ---
+// Hook sonrası orijinal fonksiyonları saklamak için (Gerekirse çağrılabilir)
+void (*orig_integrity)(void *a1, void *a2);
+void (*orig_root)(void *a1);
+void (*orig_report)(void *a1, void *a2);
 
-// Raporlama fonksiyonunu devre dışı bırakmak veya manipüle etmek için
-void (*orig_AnoSDKDelReportData)(void *a1, void *a2);
-void hook_AnoSDKDelReportData(void *a1, void *a2) {
-    // Fonksiyonun çalışmasını engelleyerek veri gönderimini durdurur
-    return; 
-}
+// --- Bypass Fonksiyonları ---
+void hook_integrity(void *a1, void *a2) { return; }
+void hook_root(void *a1) { return; }
+void hook_report(void *a1, void *a2) { return; }
 
-// ASLR Taban Adresini Bulan Fonksiyon
-uintptr_t get_anogs_base() {
-    uint32_t count = _dyld_image_count();
-    for (uint32_t i = 0; i < count; i++) {
+// --- ASLR Hesaplama ve Modül Bulma ---
+uintptr_t get_anogs_base_address() {
+    uintptr_t base = 0;
+    uint32_t image_count = _dyld_image_count();
+    
+    for (uint32_t i = 0; i < image_count; i++) {
         const char *name = _dyld_get_image_name(i);
         if (name && strstr(name, "anogs")) {
-            // Bellekteki gerçek yükleme adresini döndürür
-            return (uintptr_t)_dyld_get_image_header(i);
+            base = (uintptr_t)_dyld_get_image_header(i);
+            break;
         }
     }
-    return 0;
+    return base;
 }
 
-// Tweak yüklendiğinde çalışacak ana bölüm
+// --- Bellek Yaması Başlatıcı ---
 __attribute__((constructor))
-static void initialize_patch() {
-    uintptr_t base_address = get_anogs_base();
+static void start_bypass() {
+    // 1. ASLR Base Adresini bul (Dinamik adres)
+    uintptr_t base = get_anogs_base_address();
     
-    if (base_address != 0) {
-        printf("[Bypass] anogs taban adresi bulundu: 0x%lx\n", base_address);
-
-        // ASLR Hesaplaması: Taban Adres + Statik Ofset
-        void *target_report = (void *)(base_address + OFFSET_REPORT_DATA);
+    if (base != 0) {
+        // ASLR Hesaplaması: Gerçek Adres = Base + Ofset
         
-        // Dobby ile Hook işlemini uygula
-        DobbyHook(target_report, (void *)hook_AnoSDKDelReportData, (void **)&orig_AnoSDKDelReportData);
+        // Bütünlük Kontrolü Bypass
+        DobbyHook((void *)(base + OFFSET_9014_INTEGRITY), (void *)hook_integrity, (void **)&orig_integrity);
         
-        printf("[Bypass] 0x%x adresine kanca atıldı.\n", OFFSET_REPORT_DATA);
-    } else {
-        printf("[Bypass] anogs dosyası bellekte bulunamadı!\n");
+        // Root/Jailbreak Alert Bypass
+        DobbyHook((void *)(base + OFFSET_ROOT_ALERT), (void *)hook_root, (void **)&orig_root);
+        
+        // SDK Veri Raporlama Bypass
+        DobbyHook((void *)(base + OFFSET_REPORT_DATA), (void *)hook_report, (void **)&orig_report);
+        
+        printf("[Bypass] anogs aktif edildi! Base: 0x%lx\n", base);
     }
 }
