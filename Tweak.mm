@@ -1,97 +1,60 @@
-#import <UIKit/UIKit.h>
-#import <mach-o/dyld.h>
-#include <string.h>
-#include <dlfcn.h>
+#include <mach-o/dyld.h>
+#include "dobby.h"
 #include <stdint.h>
+#include <stdio.h>
 
-extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
-
-uintptr_t anogs_base = 0;
-void *anogs_backup = NULL;
-size_t anogs_size = 0x300000; 
-
-int (*orig_memcmp)(const void *s1, const void *s2, size_t n);
-
-// --- Düzeltilmiş Rapor Körleme ---
-uint64_t (*orig_AnoSDKGetReportData3_0)();
-uint64_t new_AnoSDKGetReportData3_0() {
-    uint64_t v1_result = 0;
-    if (orig_AnoSDKGetReportData3_0) {
-        v1_result = orig_AnoSDKGetReportData3_0();
-    }
-
-    // Eğer veri döndüyse, sadece adresin geçerli olduğundan emin olup temizliyoruz
-    if (v1_result > 0x100000000) { // Basit bir pointer geçerlilik kontrolü
-        memset((void *)v1_result, 0, 8); 
-    }
-
-    return v1_result; 
+// --- Yardımcı Fonksiyon: Uygulamanın Başlangıç Adresini Bulur (ASLR Bypass) ---
+uintptr_t get_BaseAddress() {
+    return (uintptr_t)_dyld_get_image_header(0);
 }
 
-// --- Derleme Hatasını Çözen Modern Popup ---
-void show_stealth_popup() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        
-        // iOS 13+ Scene-based window bulma
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
-                    window = ((UIWindowScene *)scene).windows.firstObject;
-                    break;
-                }
-            }
-        }
-        
-        // Eski iOS sürümleri veya Scene bulunamazsa yedek
-        if (!window) {
-            window = [UIApplication sharedApplication].windows.firstObject;
-        }
-
-        if (window && window.rootViewController) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"System" 
-                                                                           message:@"Stealth Mode Active" 
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-            [window.rootViewController presentViewController:alert animated:YES completion:nil];
-        }
-    });
-}
-
-// Bütünlük Kontrolü (Aynı kalıyor)
-int new_memcmp(const void *s1, const void *s2, size_t n) {
-    uintptr_t addr1 = (uintptr_t)s1;
-    uintptr_t addr2 = (uintptr_t)s2;
-    if (anogs_base != 0 && anogs_backup != NULL) {
-        if (addr1 >= anogs_base && addr1 < (anogs_base + anogs_size)) {
-            size_t offset = addr1 - anogs_base;
-            return orig_memcmp((void *)((uintptr_t)anogs_backup + offset), s2, n);
-        }
-        if (addr2 >= anogs_base && addr2 < (anogs_base + anogs_size)) {
-            size_t offset = addr2 - anogs_base;
-            return orig_memcmp(s1, (void *)((uintptr_t)anogs_backup + offset), n);
-        }
+// --- 1. Adres: F1204 (BL _memcpy) Hook ---
+void* (*orig_memcpy)(void* dst, const void* src, size_t n);
+void* my_memcpy(void* dst, const void* src, size_t n) {
+    // 0x400 (1024) boyutundaki kopyalamayı yakalıyoruz
+    if (n == 0x400) {
+        // İhtiyaç duyarsan müdahale edebilirsin
     }
-    return orig_memcmp(s1, s2, n);
+    return orig_memcpy(dst, src, n);
 }
 
+// --- 2. Fonksiyon Giriş Hook (F11CC) ---
+void (*orig_sub_F11CC)(void *a, void *b, void *c);
+void my_sub_F11CC(void *a, void *b, void *c) {
+    return orig_sub_F11CC(a, b, c);
+}
+
+// --- Ana Yükleyici (Constructor) ---
 __attribute__((constructor))
-static void global_init() {
-    void *m_ptr = dlsym(RTLD_DEFAULT, "memcmp");
-    if (m_ptr) DobbyHook(m_ptr, (void *)new_memcmp, (void **)&orig_memcmp);
+static void initialize_patches() {
+    uintptr_t base = get_BaseAddress();
+    
+    // Ortak NOP komutu (ARM64: 1F 20 03 D5)
+    uint8_t nop_instr[] = {0x1F, 0x20, 0x03, 0xD5};
 
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (name && (strstr(name, "anogs") || strstr(name, "ace_cs2"))) {
-            anogs_base = (uintptr_t)_dyld_get_image_vmaddr_slide(i);
-            anogs_backup = malloc(anogs_size);
-            memcpy(anogs_backup, (void *)anogs_base, anogs_size);
-            
-            // Offsetini kontrol etmeyi unutma kanka (0x2DCC8)
-            DobbyHook((void *)(anogs_base + 0x2DCC8), (void *)new_AnoSDKGetReportData3_0, (void **)&orig_AnoSDKGetReportData3_0);
-            
-            show_stealth_popup();
-            break;
-        }
-    }
+    // --- HOOK İŞLEMLERİ ---
+    
+    // F11CC: Ana giriş noktası
+    DobbyHook((void *)(base + 0xF11CC), (void *)my_sub_F11CC, (void **)&orig_sub_F11CC);
+
+    // F1204: Memcpy sistem çağrısını kancalar
+    DobbyHook((void *)DobbySymbolResolver(NULL, "_memcpy"), (void *)my_memcpy, (void **)&orig_memcpy);
+
+
+    // --- BELLEK YAMALARI (Hex Patching) ---
+
+    // F1200: MOV W2, #0x400 -> Kopyalama boyutunu 0 yap (Hex: 00 00 80 52)
+    uint8_t patch_size_zero[] = {0x00, 0x00, 0x80, 0x52}; 
+    DobbyCodePatch((void *)(base + 0xF1200), patch_size_zero, 4);
+
+    // F1240: CBZ X20, loc_F128C -> NOP (Hata kontrolünü atla)
+    DobbyCodePatch((void *)(base + 0xF1240), nop_instr, 4);
+
+    // --- Eklediğin Kayıt Adreslerine NOP Atama ---
+    // Bu adresler fonksiyonun hazırlık (prologue) aşamasıdır
+    DobbyCodePatch((void *)(base + 0xF1198), nop_instr, 4);
+    DobbyCodePatch((void *)(base + 0xF119C), nop_instr, 4);
+    DobbyCodePatch((void *)(base + 0xF11A0), nop_instr, 4);
+    DobbyCodePatch((void *)(base + 0xF11B0), nop_instr, 4);
+    DobbyCodePatch((void *)(base + 0xF11B4), nop_instr, 4);
 }
