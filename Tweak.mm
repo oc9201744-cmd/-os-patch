@@ -1,60 +1,47 @@
-#include <stdint.h>
-#include <stdio.h>
-#include <unistd.h>    // sleep fonksiyonu için gerekli
+#include <dobby.h>
 #include <mach-o/dyld.h>
-#include <sys/types.h>
+#include <string.h>
+#include <dlfcn.h>
+#include <stdio.h>
 
-// Dobby fonksiyonlarını manuel tanımlayarak çakışmaları önlüyoruz
-extern "C" {
-    int DobbyHook(void *address, void *replace_call, void **origin_call);
-    int DobbyCodePatch(void *address, uint8_t *patch_code, uint32_t patch_size);
-    void *DobbySymbolResolver(const char *image_name, const char *symbol_name);
+// 1. Bütünlük Banı (9014 Alert) Hook'u
+void (*orig_11824)(void *a1, void *a2);
+void hook_11824(void *a1, void *a2) {
+    // 9014 Bütünlük uyarısı tetiklendiğinde hiçbir eylem yapma, geri dön.
+    return;
 }
 
-// --- Yardımcı Fonksiyon: Uygulamanın Başlangıç Adresini Bulur ---
-uintptr_t get_BaseAddress() {
-    return (uintptr_t)_dyld_get_image_header(0);
+// 2. Report & Ortam Banı (Root Alert) Hook'u
+void (*orig_63D4)(void *a1);
+void hook_63D4(void *a1) {
+    // Sistem raporu/alert tetiklendiğinde engelle, geri dön.
+    return;
 }
 
-// --- Hook Fonksiyonları ---
-void* (*orig_memcpy)(void* dst, const void* src, size_t n);
-void* my_memcpy(void* dst, const void* src, size_t n) {
-    return orig_memcpy(dst, src, n);
+// ANOGS framework'ünün çalışma zamanındaki temel adresini (Base Address) bulur
+uintptr_t get_anogs_base() {
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *image_name = _dyld_get_image_name(i);
+        // anogs.framework modülünü arıyoruz
+        if (strstr(image_name, "anogs")) {
+            return (uintptr_t)_dyld_get_image_header(i);
+        }
+    }
+    return 0;
 }
 
-void (*orig_sub_F11CC)(void *a, void *b, void *c);
-void my_sub_F11CC(void *a, void *b, void *c) {
-    return orig_sub_F11CC(a, b, c);
-}
-
-// --- Ana Yükleyici ---
+// Kütüphane yüklendiğinde otomatik çalışacak bypass fonksiyonu
 __attribute__((constructor))
-static void initialize_patches() {
-    // 50 Saniye Bekletme (Uygulama açıldıktan sonra bekler)
-    // printf("Patch baslatilmadan once 50 saniye bekleniyor...\n");
-    sleep(50); 
-
-    uintptr_t base = get_BaseAddress();
-    uint8_t nop_instr[] = {0x1F, 0x20, 0x03, 0xD5};
-
-    // --- HOOKS ---
-    DobbyHook((void *)(base + 0xF11CC), (void *)my_sub_F11CC, (void **)&orig_sub_F11CC);
-    DobbyHook((void *)DobbySymbolResolver(NULL, "memcpy"), (void *)my_memcpy, (void **)&orig_memcpy);
-
-    // --- PATCHES ---
-    // F1200: MOV W2, #0
-    uint8_t patch_size_zero[] = {0x00, 0x00, 0x80, 0x52}; 
-    DobbyCodePatch((void *)(base + 0xF1200), patch_size_zero, 4);
-
-    // F1240: CBZ X20 -> NOP
-    DobbyCodePatch((void *)(base + 0xF1240), nop_instr, 4);
-
-    // Diğer kayıt noktalarına NOP (F1198, F119C, F11A0, F11B0, F11B4)
-    DobbyCodePatch((void *)(base + 0xF1198), nop_instr, 4);
-    DobbyCodePatch((void *)(base + 0xF119C), nop_instr, 4);
-    DobbyCodePatch((void *)(base + 0xF11A0), nop_instr, 4);
-    DobbyCodePatch((void *)(base + 0xF11B0), nop_instr, 4);
-    DobbyCodePatch((void *)(base + 0xF11B4), nop_instr, 4);
+void init_memory_patch() {
+    uintptr_t anogs_base = get_anogs_base();
     
-    // printf("Patch islemleri tamamlandi!\n");
+    if (anogs_base != 0) {
+        // Analizden elde edilen offsetler
+        uintptr_t integrity_ban_addr = anogs_base + 0x11824; 
+        uintptr_t report_ban_addr = anogs_base + 0x63D4;
+        
+        // Dobby ile belleğe bypass yamalarını atıyoruz
+        DobbyHook((void*)integrity_ban_addr, (void*)hook_11824, (void**)&orig_11824);
+        DobbyHook((void*)report_ban_addr, (void*)hook_63D4, (void**)&orig_63D4);
+    }
 }
