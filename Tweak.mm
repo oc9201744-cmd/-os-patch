@@ -7,11 +7,12 @@
 #import <dobby.h>
 
 /**
- * KINGMOD ULTIMATE BYPASS & HOOK (Non-Jailbreak)
- * 1. anogs Case 35 (0x23) Integrity & Reporting Bypass
- * 2. Ban Trigger (Reporting) Susturma
- * 3. Anti-Debug (Ptrace/Syscall) Bypass
- * 4. Hile Aktif Görsel Bildirimi
+ * KINGMOD ULTIMATE BYPASS & HOOK (Non-Jailbreak) - GECİKMELİ VERSİYON
+ * 1. 20 Saniye Gecikmeli Başlatma (Delay)
+ * 2. anogs Raporlama Susturma (Reporting Bypass)
+ * 3. Case 35 (0x23) İptali
+ * 4. Anti-Debug (Ptrace/Sysctl) Bypass
+ * 5. Hile Aktif Görsel Bildirimi
  */
 
 // --- Orijinal Fonksiyon Saklayıcılar ---
@@ -19,19 +20,13 @@ int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *
 void* (*orig_AnoSDKGetReportData)(void* a1, void* a2);
 int (*orig_ptrace)(int request, pid_t pid, caddr_t addr, int data);
 
-// --- 1. Case 35 (0x23) & Ban Raporlamasını İptal Et ---
-// anogs.c analizindeki Case 35 (0x23) kontrolü bellek bütünlüğü veya dosya taramasıdır.
-// Bu raporlama fonksiyonunu hooklayarak her zaman temiz veri (NULL) döndürüyoruz.
+// --- 1. anogs Raporlamasını İptal Et (Ban Trigger Susturma) ---
 void* my_AnoSDKGetReportData(void* a1, void* a2) {
-    // a1 parametresi genellikle rapor tipini (Case ID) belirler.
-    // Eğer a1 == 35 (0x23) ise bu kritik bütünlük kontrolüdür.
     int caseId = (int)(uintptr_t)a1;
-    if (caseId == 35 || caseId == 0x23) {
-        NSLog(@"[KINGMOD] Case 35 (Integrity Check) Tespit Edildi ve Engellendi!");
-        return NULL; // Raporu sustur
+    if (caseId == 35 || caseId == 0x23 || caseId == 1 || caseId == 2) {
+        NSLog(@"[KINGMOD] Kritik anogs Raporu (Case: %d) Susturuldu!", caseId);
+        return NULL; 
     }
-    
-    NSLog(@"[KINGMOD] anogs Raporu (Case: %d) Engellendi!", caseId);
     return NULL; 
 }
 
@@ -64,53 +59,61 @@ int my_ptrace(int request, pid_t pid, caddr_t addr, int data) {
 
 // --- 3. Hile Aktif Bildirimi (UI) ---
 void show_kingmod_alert() {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
-                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                    window = windowScene.windows.firstObject;
-                    break;
-                }
+    UIWindow *window = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
+            if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+                window = windowScene.windows.firstObject;
+                break;
             }
-        } else {
-            window = [UIApplication sharedApplication].keyWindow;
         }
+    } else {
+        window = [UIApplication sharedApplication].keyWindow;
+    }
 
-        UIViewController *rootVC = window.rootViewController;
-        if (rootVC) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"👑 KINGMOD BYPASS 👑"
-                                                                           message:@"Case 35 (0x23) İptal Edildi!\nBütünlük Doğrulaması Devre Dışı!\n\nİyi Oyunlar Kanka."
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"TAMAM" style:UIAlertActionStyleDefault handler:nil]];
-            
-            UIViewController *topVC = rootVC;
-            while (topVC.presentedViewController) topVC = topVC.presentedViewController;
-            [topVC presentViewController:alert animated:YES completion:nil];
-        }
-    });
+    UIViewController *rootVC = window.rootViewController;
+    if (rootVC) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"👑 KINGMOD BYPASS 👑"
+                                                                       message:@"20 Saniye Gecikme Tamamlandı!\nanogs Raporlama Susturuldu!\nBypass Aktif, İyi Oyunlar Kanka."
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"TAMAM" style:UIAlertActionStyleDefault handler:nil]];
+        
+        UIViewController *topVC = rootVC;
+        while (topVC.presentedViewController) topVC = topVC.presentedViewController;
+        [topVC presentViewController:alert animated:YES completion:nil];
+    }
 }
 
-// --- Ana Giriş (Constructor) ---
-__attribute__((constructor)) static void kingmod_init() {
-    NSLog(@"[KINGMOD] Başlatılıyor...");
+// --- 4. Bypass ve Hook İşlemlerini Başlat ---
+void start_kingmod_bypass() {
+    NSLog(@"[KINGMOD] 20 Saniye Gecikme Bitti, Bypass Başlatılıyor...");
 
-    // 1. anogs Raporlama Fonksiyonlarını Hookla (Case 35 Bypass Dahil)
+    // anogs Raporlama Fonksiyonlarını Hookla
     void* getReport = dlsym(RTLD_DEFAULT, "AnoSDKGetReportData");
     void* delReport = dlsym(RTLD_DEFAULT, "AnoSDKDelReportData");
     if (getReport) DobbyHook(getReport, (void *)my_AnoSDKGetReportData, (void **)&orig_AnoSDKGetReportData);
     if (delReport) DobbyHook(delReport, (void *)my_AnoSDKDelReportData, NULL);
 
-    // 2. Sistem Seviyesi Bypasslar
+    // Sistem Seviyesi Bypasslar
     DobbyHook((void *)sysctl, (void *)my_sysctl, (void **)&orig_sysctl);
     
     void* ptrace_ptr = dlsym(RTLD_DEFAULT, "ptrace");
     if (ptrace_ptr) DobbyHook(ptrace_ptr, (void *)my_ptrace, (void **)&orig_ptrace);
 
-    // 3. Hile Aktif Bildirimi
+    // Hile Aktif Bildirimi
     dispatch_async(dispatch_get_main_queue(), ^{
         show_kingmod_alert();
     });
 
-    NSLog(@"[KINGMOD] Case 35 ve Tüm Sistemler Aktif!");
+    NSLog(@"[KINGMOD] Gecikmeli Bypass Aktif!");
+}
+
+// --- Ana Giriş (Constructor) ---
+__attribute__((constructor)) static void kingmod_init() {
+    NSLog(@"[KINGMOD] Oyun Başlatıldı, 20 Saniye Gecikme Devrede...");
+
+    // 20 Saniye sonra bypass işlemlerini başlat (dispatch_after kullanarak)
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        start_kingmod_bypass();
+    });
 }
