@@ -1,5 +1,4 @@
-name: Anogs Bypass Build (v4)
-
+name: V5 Auto Build
 on:
   push:
     branches: [ main ]
@@ -7,49 +6,35 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
-    
+    runs-on: macos-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Dependencies
-        run: |
-          brew install ldid dpkg
+      - name: Checkout Project
+        uses: actions/checkout@v3
 
       - name: Install Theos
         run: |
-          export THEOS=~/theos
-          rm -rf $THEOS
-          git clone --recursive https://github.com/theos/theos.git $THEOS
-          rm -rf $THEOS/sdks
-          git clone --quiet https://github.com/theos/sdks.git $THEOS/sdks
-          echo "THEOS=$THEOS" >> $GITHUB_ENV
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          echo "THEOS=/Users/runner/theos" >> $GITHUB_ENV
 
-      - name: Compile Tweak
+      - name: Setup SDK
         run: |
-          # FINALPACKAGE=1 ile dylib'i optimize et
+          git clone https://github.com/theos/sdks.git $THEOS/sdks
+
+      - name: Setup KittyMemory (Auto)
+        run: |
+          if [ ! -d "KittyMemory" ]; then
+            git clone https://github.com/joeyjurjens/KittyMemory.git
+            # Dosyaları üst dizine taşıyarak yolu düzeltiyoruz
+            cp -r KittyMemory/KittyMemory/* KittyMemory/
+          fi
+
+      - name: Build Tweak
+        run: |
+          export THEOS=$THEOS
           make package FINALPACKAGE=1
-        env:
-          THEOS: ${{ env.THEOS }}
-
-      - name: Prepare Dylib for Sideloading
-        run: |
-          # .theos klasörü içindeki dylib'i bul ve kolay erişim için kopyala
-          mkdir -p output
-          find .theos/obj -name "*.dylib" -exec cp {} output/ \;
-          
-          # Jailbreaksiz cihazlar için bağımlılık yolunu düzelt (Opsiyonel ama önerilir)
-          # Eğer libsubstrate.dylib kullanacaksanız aşağıdaki komutu aktif edin:
-          # for f in output/*.dylib; do ldid -S "$f"; done
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
-          name: AnogsBypass-Build-Output
-          path: |
-            packages/*.deb
-            output/*.dylib
-          if-no-files-found: error
+          name: Bypass-Dylib
+          path: .theos/obj/arm64/*.dylib
