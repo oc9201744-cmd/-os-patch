@@ -1,13 +1,12 @@
-# Mimari ve Hedef Sürüm
-ARCHS = arm64 arm64e
-TARGET = iphone:clang:latest:14.0
-
-TWEAK_NAME = BypassTweak
-BypassTweak_FILES = Tweak.mm
-
-# -L. geçerli dizine bakar, -ldobby libdobby.dylib dosyasını bağlar
-BypassTweak_LDFLAGS = -L. -ldobby
-BypassTweak_CCFLAGS = -std=c++11 -fno-modules
+export ARCHS = arm64e
+export TARGET = iphone:clang:latest:14.0
 
 include $(THEOS)/makefiles/common.mk
-include $(THEOS)/makefiles/tweak.mk
+
+TWEAK_NAME = BypassTweak
+
+$(TWEAK_NAME)_FILES = Tweak.mm
+$(TWEAK_NAME)_CFLAGS = -fobjc-arc -Iinclude
+$(TWEAK_NAME)_LDFLAGS = -L. -ldobby
+
+include $(THEOS_MAKE_PATH)/tweak.mk
