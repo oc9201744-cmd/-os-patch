@@ -21,13 +21,13 @@ int new_memcmp(const void *s1, const void *s2, size_t n) {
     uintptr_t addr1 = (uintptr_t)s1;
     uintptr_t addr2 = (uintptr_t)s2;
     
-    // Yamaladığın yerin adresi (Base + Offset)
-    uintptr_t target_addr = target_base + 0x4224;
-
-    // Eğer sistem bizim yamalı adresimizi taramaya kalkarsa orijinal veriyi gösteriyoruz
     if (target_base != 0) {
+        // Yamaladığın yerin adresi (Base + Offset)
+        uintptr_t target_addr = target_base + 0x4224;
+
+        // Eğer sistem bizim yamalı adresimizi taramaya kalkarsa orijinal veriyi gösteriyoruz
         if (addr1 == target_addr || addr2 == target_addr) {
-            LOG("!!! INTEGRITY CHECK YAKALANDI !!! Sahte veri döndürülüyor...");
+            LOG("!!! INTEGRITY CHECK YAKALANDI !!! Orijinal veri taklit ediliyor...");
             if (addr1 == target_addr) return orig_memcmp(original_buffer, s2, n);
             return orig_memcmp(s1, original_buffer, n);
         }
@@ -35,26 +35,32 @@ int new_memcmp(const void *s1, const void *s2, size_t n) {
     return orig_memcmp(s1, s2, n);
 }
 
-// --- Anogs Yüklendiğinde Çalışacak Fonksiyon ---
+// --- Anogs Yüklendiğinde Çalışacak Fonksiyon (Hatasız Versiyon) ---
 static void on_image_load(const struct mach_header *mh, intptr_t slide) {
-    const char *name = _dyld_get_image_name_by_header(mh); // Not: Bazı SDK'larda hata verirse manuel döngüye döneriz
-    
-    if (name && strstr(name, "anogs")) {
-        target_base = (uintptr_t)slide;
-        LOG("🔥 ANOGS YAKALANDI! Base: 0x%lx", target_base);
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        // Sistemdeki mevcut header'ı bulup ismini kontrol ediyoruz
+        if (_dyld_get_image_header(i) == mh) {
+            const char *name = _dyld_get_image_name(i);
+            if (name && strstr(name, "anogs")) {
+                target_base = (uintptr_t)slide;
+                LOG("🔥 ANOGS YAKALANDI! Base (Slide): 0x%lx", (long)target_base);
+            }
+            break;
+        }
     }
 }
 
 // --- Giriş Noktası ---
 __attribute__((constructor))
 static void setup_bypass() {
-    LOG("Bypass Dylib Yüklendi. Sistem başlatılıyor...");
+    LOG("Bypass Dylib Yüklendi.");
 
-    // 1. memcmp kancasını hemen at (Tarayıcıyı en baştan kör et)
+    // 1. memcmp kancasını hemen at
     void *memcmp_ptr = dlsym(RTLD_DEFAULT, "memcmp");
     if (memcmp_ptr) {
         if (DobbyHook(memcmp_ptr, (void *)new_memcmp, (void **)&orig_memcmp) == 0) {
-            LOG("BAŞARILI: memcmp kancalandı. Tarayıcı kör edildi.");
+            LOG("BAŞARILI: memcmp kancalandı.");
         } else {
             LOG("HATA: memcmp kancalanamadı!");
         }
