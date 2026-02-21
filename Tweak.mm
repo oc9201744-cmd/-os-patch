@@ -2,7 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <mach-o/dyld.h>
 
-// Artık direkt bu şekilde çağırabilirsin
+// Makefile'da yolu kısalttığımız için bu şekilde olmalı
 #include "KittyMemory.hpp"
 #include "MemoryPatch.hpp"
 
@@ -26,7 +26,7 @@ static void start() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
 
-        // KittyMemory ile güvenli patch
+        // 0x371E0 adresini yamala
         bypassPatch = MemoryPatch::createWithBytes(base + 0x371E0, "\x00\x00\x80\xD2\xC0\x03\x5F\xD6", 8);
         
         if(bypassPatch.Modify()) {
