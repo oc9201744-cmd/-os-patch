@@ -1,35 +1,78 @@
-#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <mach-o/dyld.h>
-#include <stdint.h>
 #include <string.h>
+#include <dlfcn.h>
+#include <stdint.h>
 
-// Bu fonksiyon yeni bir kütüphane yüklendiğinde çalışır
-static void image_added(const struct mach_header *mh, intptr_t vmaddr_slide) {
-    // Tüm yüklü imajları tarayarak ismini buluyoruz
-    uint32_t count = _dyld_image_count();
-    for (uint32_t i = 0; i < count; i++) {
-        // Header adresi bizim yakaladığımız ile eşleşiyor mu?
-        if (_dyld_get_image_header(i) == mh) {
-            const char *name = _dyld_get_image_name(i);
-            
-            // Sadece anogs içerenleri logla
-            if (name && strstr(name, "anogs")) {
-                NSLog(@"\n\n[ACE_LOG] =================================");
-                NSLog(@"[ACE_LOG] 🔥 ANOGS BELLEĞE YÜKLENDİ!");
-                NSLog(@"[ACE_LOG] 📍 Yol: %s", name);
-                NSLog(@"[ACE_LOG] 🚀 ASLR Slide: 0x%lx", (long)vmaddr_slide);
-                NSLog(@"[ACE_LOG] 🎯 Header: %p", mh);
-                NSLog(@"[ACE_LOG] =================================\n\n");
-            }
-            break;
+extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
+
+typedef uint64_t _QWORD;
+
+uintptr_t anogs_base = 0;
+void *anogs_backup = NULL;
+size_t anogs_size = 0x300000; 
+
+int (*orig_memcmp)(const void *s1, const void *s2, size_t n);
+
+// --- 1. FONKSİYON: sub_6D1E0 (Veri Temizliği) ---
+void (*orig_sub_6D1E0)(uint64_t a1);
+void new_sub_6D1E0(uint64_t a1) {
+    if (orig_sub_6D1E0) orig_sub_6D1E0(a1);
+    
+    // Senin analizindeki offsetleri sıfırlıyoruz
+    *(uint64_t *)(a1 + 1000) = 0LL;
+    *(uint8_t *)(a1 + 1040) = 0;
+    *(uint8_t *)(a1 + 1362) = 0; // Heartbeat sustur
+    *(uint32_t *)(a1 + 328) = 0; // Hata sayacı sıfırla
+}
+
+// --- 2. YENİ FONKSİYON: sub_8DFC (Rapor Postacısını Susturma) ---
+// Bu fonksiyon SendCmd: çağrısını yapar. return 0 yaparak raporu çöpe atıyoruz.
+uint64_t (*orig_sub_8DFC)(uint64_t a1);
+uint64_t new_sub_8DFC(uint64_t a1) {
+    // Orijinali çağırmıyoruz veya çağırsak bile sonucunu manipüle ediyoruz.
+    // Fotoğraftaki adamın mantığına göre raporun gönderilmesini engellemek için:
+    // orig_sub_8DFC(a1); // İstersen çalıştır ama biz raporu boş göndermiş olduk zaten.
+    
+    return 0LL; // Her zaman başarılı/boş dönmesini sağla
+}
+
+// --- Bütünlük Kontrolü Maskeleme ---
+int new_memcmp(const void *s1, const void *s2, size_t n) {
+    uintptr_t addr1 = (uintptr_t)s1;
+    uintptr_t addr2 = (uintptr_t)s2;
+    if (anogs_base != 0 && anogs_backup != NULL) {
+        if (addr1 >= anogs_base && addr1 < (anogs_base + anogs_size)) {
+            size_t offset = addr1 - anogs_base;
+            return orig_memcmp((void *)((uintptr_t)anogs_backup + offset), s2, n);
+        }
+        if (addr2 >= anogs_base && addr2 < (anogs_base + anogs_size)) {
+            size_t offset = addr2 - anogs_base;
+            return orig_memcmp(s1, (void *)((uintptr_t)anogs_backup + offset), n);
         }
     }
+    return orig_memcmp(s1, s2, n);
 }
 
 __attribute__((constructor))
-static void init_logging(void) {
-    NSLog(@"[ACE_LOG] Takip başlatıldı, Anogs bekleniyor...");
-    
-    // Sistemdeki dylib yüklemelerini izlemek için en sağlam yöntem
-    _dyld_register_func_for_add_image(image_added);
+static void global_init() {
+    void *m_ptr = dlsym(RTLD_DEFAULT, "memcmp");
+    if (m_ptr) DobbyHook(m_ptr, (void *)new_memcmp, (void **)&orig_memcmp);
+
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (name && (strstr(name, "anogs") || strstr(name, "ace_cs2"))) {
+            anogs_base = (uintptr_t)_dyld_get_image_vmaddr_slide(i);
+            anogs_backup = malloc(anogs_size);
+            memcpy(anogs_backup, (void *)anogs_base, anogs_size);
+            
+            // sub_6D1E0 (Veriyi hazırlayan yer)
+            DobbyHook((void *)(anogs_base + 0x6D1E0), (void *)new_sub_6D1E0, (void **)&orig_sub_6D1E0);
+            
+            // sub_8DFC (Veriyi postalayan yer)
+            DobbyHook((void *)(anogs_base + 0x8DFC), (void *)new_sub_8DFC, (void **)&orig_sub_8DFC);
+            
+            break;
+        }
+    }
 }
