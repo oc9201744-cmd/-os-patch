@@ -1,35 +1,51 @@
 #import <UIKit/UIKit.h>
+#import <substrate.h>
 #import <mach-o/dyld.h>
-#import <mach/mach.h>
 
-// Belirli bir adresteki veriyi (opcode) okuma fonksiyonu
-void check_original_code(uintptr_t target_addr, NSString *label) {
-    uint32_t current_code;
-    
-    // Bellekteki 4 byte'lık kodu güvenli bir şekilde oku
-    if (vm_read_overwrite(mach_task_self(), (vm_address_t)target_addr, sizeof(uint32_t), (vm_address_t)&current_code, NULL) == KERN_SUCCESS) {
-        // Okunan kodu Hex formatında logla
-        NSLog(@"[V4_ANALYZE] 🔍 %@ | Adres: 0x%lx | Mevcut Kod: 0x%08X", label, target_addr, current_code);
-    } else {
-        NSLog(@"[V4_ANALYZE] ❌ %@ | Adres okunamadı! (0x%lx)", label, target_addr);
-    }
+#ifdef __cplusplus
+extern "C" {
+#endif
+    int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
+#ifdef __cplusplus
+}
+#endif
+
+void show_v4_toast(NSString *msg) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
+        if (window) {
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(window.frame.size.width/4, 150, window.frame.size.width/2, 40)];
+            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
+            label.textColor = [UIColor cyanColor];
+            label.textAlignment = NSTextAlignmentCenter;
+            label.text = msg;
+            label.font = [UIFont boldSystemFontOfSize:13];
+            label.layer.cornerRadius = 15;
+            label.clipsToBounds = YES;
+            [window addSubview:label];
+            [UIView animateWithDuration:5.0 animations:^{ label.alpha = 0; } completion:^(BOOL finished){ [label removeFromSuperview]; }];
+        }
+    });
 }
 
 %ctor {
-    NSLog(@"[V4_ANALYZE] 🕵️ Analiz Modu Aktif. Hiçbir yama yapılmıyor...");
+    NSLog(@"[V4_DEBUG] 🛠️ Patching 0x371E0 with MOV X0, #0...");
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t base_addr = (uintptr_t)_dyld_get_image_header(0);
-        NSLog(@"[V4_ANALYZE] ℹ️ Base Address: 0x%lx", base_addr);
+        uintptr_t target_addr = base_addr + 0x371E0; 
 
-        // Mevcut durum tespiti
-        check_original_code(base_addr + 0xF1198, @"Check_1");
-        check_original_code(base_addr + 0xF11A0, @"Check_2");
-        check_original_code(base_addr + 0xF119C, @"Check_3");
-        check_original_code(base_addr + 0xF11B0, @"Check_4");
-        check_original_code(base_addr + 0xF11B4, @"Check_5");
-
-        NSLog(@"[V4_ANALYZE] ✅ Analiz tamamlandı. Logları kontrol et.");
+        // MOV X0, #0 (00 00 80 D2) ve RET (C0 03 5F D6)
+        uint8_t zero_patch[] = {0x00, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6}; 
+        
+        int result = DobbyCodePatch((void *)target_addr, zero_patch, 8);
+        
+        if (result == 0) {
+            NSLog(@"[V4_DEBUG] ✅ Patch Basarili (X0=0): 0x371E0");
+            show_v4_toast(@"Patch Aktif: MOV X0, #0");
+        } else {
+            NSLog(@"[V4_DEBUG] ❌ Patch Hatasi! Kod: %d", result);
+        }
     });
 }
