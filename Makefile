@@ -1,16 +1,41 @@
-export ARCHS = arm64 arm64e
-export TARGET = iphone:clang:latest:14.0
+TARGET = bypass
+ARCHS = arm64
+SDKVERSION = 16.0
 
-include $(THEOS)/makefiles/common.mk
+# Compiler and linker flags
+CC = clang
+CXX = clang++
 
-TWEAK_NAME = BypassTweak
+# Include paths
+INCLUDE_PATHS = -I./include
 
-# YAML tarafından indirilen KittyMemory dosyaları
-KITTY_SRC = $(wildcard KittyMemory/*.cpp)
+# Library paths (libdobby.a is now in the current directory)
+LIBRARY_PATHS = -L.
 
-$(TWEAK_NAME)_FILES = Tweak.mm $(KITTY_SRC)
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc -IKittyMemory -Iinclude -DkNO_KEYSTONE -std=c++11
-$(TWEAK_NAME)_LDFLAGS = -L. -ldobby -lobjc -undefined dynamic_lookup
-$(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation Security
+# Libraries to link
+LIBRARIES = -ldobby -framework Foundation -framework UIKit
 
-include $(THEOS_MAKE_PATH)/tweak.mk
+# Compiler flags
+CFLAGS = -arch $(ARCHS) -isysroot $(shell xcrun --sdk iphoneos --show-sdk-path) -miphoneos-version-min=12.0 $(INCLUDE_PATHS) -fobjc-arc
+CXXFLAGS = $(CFLAGS) -std=c++17
+LDFLAGS = -arch $(ARCHS) -isysroot $(shell xcrun --sdk iphoneos --show-sdk-path) $(LIBRARY_PATHS) $(LIBRARIES)
+
+# Source files
+SOURCES = main.mm
+
+# Object files
+OBJECTS = $(SOURCES:.mm=.o)
+
+all: $(TARGET).dylib
+
+$(TARGET).dylib: $(OBJECTS)
+	$(CXX) $(OBJECTS) $(LDFLAGS) -dynamiclib -o $@
+
+%.o: %.mm
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(OBJECTS) $(TARGET).dylib
+
+install:
+	@echo "Non-jailbroken device installation requires manual IPA injection."
