@@ -19,13 +19,7 @@ jobs:
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '15.x' # En son Xcode sürümünü kullan
-
-    - name: Install necessary tools (if any)
-      run: |
-        # Dobby kütüphanesi zaten repo içinde olduğu için ek bir kurulum gerekmez.
-        # Eğer başka bağımlılıklar olsaydı buraya eklenebilirdi.
-        echo "No additional tools to install."
+        xcode-version: '15.x'
 
     - name: Build Dylib
       run: |
