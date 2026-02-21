@@ -3,27 +3,33 @@
 #include <stdint.h>
 #include <string.h>
 
-// Bu fonksiyon Anogs modülü belleğe girdiği an sistem tarafından tetiklenir
-static void on_anogs_load(const struct mach_header *mh, intptr_t slide) {
-    // Yüklenen kütüphanenin ismini çekiyoruz
-    const char *name = _dyld_get_image_name_by_header(mh);
-    
-    // Sadece isminde "anogs" geçenleri yakala
-    if (name && strstr(name, "anogs")) {
-        NSLog(@"\n\n[ACE_LOG] =================================");
-        NSLog(@"[ACE_LOG] 🔥 ANOGS BELLEĞE YÜKLENDİ!");
-        NSLog(@"[ACE_LOG] 📍 Yol: %s", name);
-        NSLog(@"[ACE_LOG] 🚀 ASLR Slide: 0x%lx", (long)slide);
-        NSLog(@"[ACE_LOG] 🎯 Header: %p", mh);
-        NSLog(@"[ACE_LOG] =================================\n\n");
+// Bu fonksiyon yeni bir kütüphane yüklendiğinde çalışır
+static void image_added(const struct mach_header *mh, intptr_t vmaddr_slide) {
+    // Tüm yüklü imajları tarayarak ismini buluyoruz
+    uint32_t count = _dyld_image_count();
+    for (uint32_t i = 0; i < count; i++) {
+        // Header adresi bizim yakaladığımız ile eşleşiyor mu?
+        if (_dyld_get_image_header(i) == mh) {
+            const char *name = _dyld_get_image_name(i);
+            
+            // Sadece anogs içerenleri logla
+            if (name && strstr(name, "anogs")) {
+                NSLog(@"\n\n[ACE_LOG] =================================");
+                NSLog(@"[ACE_LOG] 🔥 ANOGS BELLEĞE YÜKLENDİ!");
+                NSLog(@"[ACE_LOG] 📍 Yol: %s", name);
+                NSLog(@"[ACE_LOG] 🚀 ASLR Slide: 0x%lx", (long)vmaddr_slide);
+                NSLog(@"[ACE_LOG] 🎯 Header: %p", mh);
+                NSLog(@"[ACE_LOG] =================================\n\n");
+            }
+            break;
+        }
     }
 }
 
 __attribute__((constructor))
-static void start_monitoring(void) {
-    // Cihazın genel loglarına dylib'in çalıştığını bildir
-    NSLog(@"[ACE_LOG] Takip başladı, Anogs yüklenmesi bekleniyor...");
+static void init_logging(void) {
+    NSLog(@"[ACE_LOG] Takip başlatıldı, Anogs bekleniyor...");
     
-    // Sistemdeki tüm dylib yüklemelerini izlemeye al
-    _dyld_register_func_for_add_image(on_anogs_load);
+    // Sistemdeki dylib yüklemelerini izlemek için en sağlam yöntem
+    _dyld_register_func_for_add_image(image_added);
 }
