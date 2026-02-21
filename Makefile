@@ -5,11 +5,10 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BypassTweak
 
-# --- OTOMATİK KURULUM VE YOL DÜZELTME ---
+# --- OTOMATİK KURULUM (GÜVENLİ ZİNCİR) ---
+# Komutları && ile birbirine bağlayarak sırayla çalışmasını garanti ediyoruz.
 ifeq ($(wildcard KittyMemory/KittyMemory.hpp),)
-$(shell git clone https://github.com/joeyjurjens/KittyMemory.git)
-# Dosyaları üst klasöre taşıyarak yolu basitleştiriyoruz
-$(shell cp -r KittyMemory/KittyMemory/* KittyMemory/)
+$(shell git clone https://github.com/joeyjurjens/KittyMemory.git && cp -r KittyMemory/KittyMemory/* KittyMemory/ && rm -rf KittyMemory/KittyMemory)
 endif
 
 $(TWEAK_NAME)_FILES = Tweak.mm $(wildcard KittyMemory/*.cpp)
