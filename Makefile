@@ -5,14 +5,15 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BypassTweak
 
-# --- OTOMATİK KURULUM (GÜVENLİ ZİNCİR) ---
-# Komutları && ile birbirine bağlayarak sırayla çalışmasını garanti ediyoruz.
-ifeq ($(wildcard KittyMemory/KittyMemory.hpp),)
-$(shell git clone https://github.com/joeyjurjens/KittyMemory.git && cp -r KittyMemory/KittyMemory/* KittyMemory/ && rm -rf KittyMemory/KittyMemory)
-endif
+# Rehberdeki tanımlamalar:
+KITTYMEMORY_PATH = KittyMemory
+KITTYMEMORY_SRC = $(wildcard $(KITTYMEMORY_PATH)/*.cpp)
 
-$(TWEAK_NAME)_FILES = Tweak.mm $(wildcard KittyMemory/*.cpp)
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc -IKittyMemory -Iinclude -Wno-error
+# Tweak dosyalarına KittyMemory kaynaklarını ekle
+$(TWEAK_NAME)_FILES = Tweak.mm $(KITTYMEMORY_SRC)
+
+# C++11 gereksinimi ve Keystone'u devre dışı bırakma (Sadece Byte Patch kullanacağımız için)
+$(TWEAK_NAME)_CFLAGS = -fobjc-arc -I$(KITTYMEMORY_PATH) -Iinclude -DkNO_KEYSTONE -std=c++11
 $(TWEAK_NAME)_LDFLAGS = -L. -ldobby -lobjc -undefined dynamic_lookup
 $(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation Security
 
