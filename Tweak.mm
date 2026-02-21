@@ -1,58 +1,29 @@
-#import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
-#include <dlfcn.h>
+#import <mach-o/dyld.h>
 #include <stdint.h>
+#include <string.h>
 
-// ================= Dobby =================
-#ifdef __cplusplus
-extern "C" {
-#endif
-int DobbyHook(void *function_address, void *replace_call, void **origin_call);
-#ifdef __cplusplus
-}
-#endif
-
-// ================= ANOGS =================
-
-// 👉 IDA’dan aldığın ARM64 adres
-#define ANOGS_LOG_ADDR 0x12345678   // BUNU DEĞİŞTİR
-
-typedef void (*anogs_log_t)(const char *msg);
-static anogs_log_t orig_anogs_log = NULL;
-
-// ================= Hook =================
-
-void hook_anogs_log(const char *msg) {
-    if (msg) {
-        NSLog(@"[ANOGS][LOG] %s", msg);
-    } else {
-        NSLog(@"[ANOGS][LOG] (null)");
-    }
-
-    // orijinali çağır (DAVRANIŞ DEĞİŞTİRMEYELİM)
-    if (orig_anogs_log) {
-        orig_anogs_log(msg);
+// Bu fonksiyon Anogs modülü belleğe girdiği an sistem tarafından tetiklenir
+static void on_anogs_load(const struct mach_header *mh, intptr_t slide) {
+    // Yüklenen kütüphanenin ismini çekiyoruz
+    const char *name = _dyld_get_image_name_by_header(mh);
+    
+    // Sadece isminde "anogs" geçenleri yakala
+    if (name && strstr(name, "anogs")) {
+        NSLog(@"\n\n[ACE_LOG] =================================");
+        NSLog(@"[ACE_LOG] 🔥 ANOGS BELLEĞE YÜKLENDİ!");
+        NSLog(@"[ACE_LOG] 📍 Yol: %s", name);
+        NSLog(@"[ACE_LOG] 🚀 ASLR Slide: 0x%lx", (long)slide);
+        NSLog(@"[ACE_LOG] 🎯 Header: %p", mh);
+        NSLog(@"[ACE_LOG] =================================\n\n");
     }
 }
-
-// ================= ASLR =================
-
-static uintptr_t get_slide(void) {
-    return (uintptr_t)_dyld_get_image_vmaddr_slide(0);
-}
-
-// ================= Init =================
 
 __attribute__((constructor))
-static void init_bypass(void) {
-    NSLog(@"[BypassTweak] Loaded (arm64)");
-
-    uintptr_t slide = get_slide();
-    void *target = (void *)(slide + ANOGS_LOG_ADDR);
-
-    if (DobbyHook(target, (void *)hook_anogs_log, (void **)&orig_anogs_log) == 0) {
-        NSLog(@"[ANOGS] Hook success @ %p", target);
-    } else {
-        NSLog(@"[ANOGS] Hook FAILED");
-    }
+static void start_monitoring(void) {
+    // Cihazın genel loglarına dylib'in çalıştığını bildir
+    NSLog(@"[ACE_LOG] Takip başladı, Anogs yüklenmesi bekleniyor...");
+    
+    // Sistemdeki tüm dylib yüklemelerini izlemeye al
+    _dyld_register_func_for_add_image(on_anogs_load);
 }
