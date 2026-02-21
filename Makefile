@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BypassTweak
 
-$(TWEAK_NAME)_FILES = Tweak.mm
+$(TWEAK_NAME)_FILES = Tweak.xm
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -Iinclude
 $(TWEAK_NAME)_LDFLAGS = -L. -ldobby
 
