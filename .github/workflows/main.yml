@@ -1,4 +1,4 @@
-name: V5 Auto Build
+name: V5 Auto Build v4
 on:
   push:
     branches: [ main ]
@@ -9,7 +9,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout Project
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Repo kontrolü v4
 
       - name: Install Theos
         run: |
@@ -20,13 +20,13 @@ jobs:
         run: |
           git clone https://github.com/theos/sdks.git $THEOS/sdks
 
-      - name: Setup KittyMemory (Auto)
+      - name: Setup KittyMemory
         run: |
-          if [ ! -d "KittyMemory" ]; then
-            git clone https://github.com/joeyjurjens/KittyMemory.git
-            # Dosyaları üst dizine taşıyarak yolu düzeltiyoruz
-            cp -r KittyMemory/KittyMemory/* KittyMemory/
-          fi
+          # Klasörü oluştur ve sadece gerekli dosyaları çek
+          mkdir -p KittyMemory
+          git clone --depth 1 https://github.com/joeyjurjens/KittyMemory.git temp_kitty
+          cp -r temp_kitty/KittyMemory/* KittyMemory/
+          rm -rf temp_kitty
 
       - name: Build Tweak
         run: |
@@ -34,7 +34,8 @@ jobs:
           make package FINALPACKAGE=1
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # İsteğin üzerine v4 kullanıldı
         with:
-          name: Bypass-Dylib
+          name: Bypass-Dylib-v5
           path: .theos/obj/arm64/*.dylib
+          if-no-files-found: error
