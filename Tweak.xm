@@ -2,7 +2,6 @@
 #import <substrate.h>
 #import <mach-o/dyld.h>
 
-// Dobby'yi C olarak dışarıdan alıyoruz
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -11,48 +10,56 @@ extern "C" {
 }
 #endif
 
-// Detaylı Log ve Yama Fonksiyonu
 void apply_dobby_patch_debug(uintptr_t target_addr, NSString *label) {
-    uint8_t nop_bytes[] = {0x1F, 0x20, 0x03, 0xD5}; // ARM64 NOP
+    uint8_t nop_bytes[] = {0x1F, 0x20, 0x03, 0xD5}; 
     
     int result = DobbyCodePatch((void *)target_addr, nop_bytes, 4);
     
     if (result == 0) {
-        // Konsola log basar (3uTools veya Console uygulamasında görünür)
-        NSLog(@"[V4_DEBUG] ✅ % @ Başarıyla Yamalandı! Adres: 0x%lx", label, target_addr);
+        // Boşluksuz %@ formatı
+        NSLog(@"[V4_DEBUG] ✅ %@ Başarıyla Yamalandı! Adres: 0x%lx", label, target_addr);
     } else {
-        NSLog(@"[V4_DEBUG] ❌ % @ YAMALANAMADI! Hata Kodu: %d Adres: 0x%lx", label, result, target_addr);
+        NSLog(@"[V4_DEBUG] ❌ %@ YAMALANAMADI! Hata Kodu: %d Adres: 0x%lx", label, result, target_addr);
     }
 }
 
-// Ekranda küçük bir "toast" mesajı göstermek için (isteğe bağlı)
 void show_debug_toast(NSString *msg) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
-        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(window.frame.size.width/4, window.frame.size.height - 100, window.frame.size.width/2, 35)];
-        label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
-        label.textColor = [UIColor whiteColor];
-        label.textAlignment = NSTextAlignmentCenter;
-        label.text = msg;
-        label.font = [UIFont systemFontOfSize:12];
-        label.layer.cornerRadius = 10;
-        label.clipsToBounds = YES;
-        [window addSubview:label];
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive) {
+                    window = scene.windows.firstObject;
+                    break;
+                }
+            }
+        }
+        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
         
-        [UIView animateWithDuration:4.0 animations:^{ label.alpha = 0; } completion:^(BOOL finished){ [label removeFromSuperview]; }];
+        if (window) {
+            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(window.frame.size.width/4, window.frame.size.height - 100, window.frame.size.width/2, 35)];
+            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+            label.textColor = [UIColor whiteColor];
+            label.textAlignment = NSTextAlignmentCenter;
+            label.text = msg;
+            label.font = [UIFont systemFontOfSize:12];
+            label.layer.cornerRadius = 10;
+            label.clipsToBounds = YES;
+            [window addSubview:label];
+            
+            [UIView animateWithDuration:4.0 animations:^{ label.alpha = 0; } completion:^(BOOL finished){ [label removeFromSuperview]; }];
+        }
     });
 }
 
 %ctor {
     NSLog(@"[V4_DEBUG] 🔥 Bypass Başlatılıyor...");
     
-    // 5 saniye bekle ki oyun tam yüklensin
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         
         uintptr_t base_addr = (uintptr_t)_dyld_get_image_header(0);
         NSLog(@"[V4_DEBUG] ℹ️ Base Address: 0x%lx", base_addr);
 
-        // Adresleri tek tek kontrol ederek yamala
         apply_dobby_patch_debug(base_addr + 0xF1198, @"Anogs_Check_1");
         apply_dobby_patch_debug(base_addr + 0xF11A0, @"Anogs_Check_2");
         apply_dobby_patch_debug(base_addr + 0xF119C, @"Anogs_Check_3");
