@@ -19,15 +19,15 @@ jobs:
     - name: Setup Xcode
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '16.x' # Mevcut olan en güncel Xcode sürümünü kullan
+        xcode-version: '16.x'
 
     - name: Build Dylib
       run: |
-        cd nonjb-bypass
+        # Dosyalar ana dizinde olduğu için doğrudan make çalıştırılır.
         make
 
     - name: Upload Dylib as artifact
       uses: actions/upload-artifact@v4
       with:
         name: bypass-dylib
-        path: nonjb-bypass/bypass.dylib
+        path: bypass.dylib
