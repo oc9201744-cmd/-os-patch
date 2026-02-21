@@ -7,7 +7,7 @@
 
 /**
  * KINGMOD BYPASS VE HOOK UYARLAMASI (Non-Jailbreak)
- * Hile aktif olduğunda ekrana bildirim gösterir.
+ * Alert gösterme hatası (sharedSelector) düzeltildi.
  */
 
 // --- Orijinal Fonksiyon Prototipleri ---
@@ -33,14 +33,37 @@ int my_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 // --- Hile Aktif Bildirimi ---
 void show_active_alert() {
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"KINGMOD"
-                                                                       message:@"Bypass ve Hile Aktif Edildi!\nİyi Oyunlar Kanka."
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"Tamam"
-                                                           style:UIAlertActionStyleDefault
-                                                         handler:nil];
-        [alert addAction:okAction];
-        [[UIApplication sharedSelector] presentViewController:alert animated:YES completion:nil];
+        // En üstteki pencereyi ve kontrolcüyü bul
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
+                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
+                    window = windowScene.windows.firstObject;
+                    break;
+                }
+            }
+        } else {
+            window = [UIApplication sharedApplication].keyWindow;
+        }
+
+        UIViewController *rootViewController = window.rootViewController;
+        if (rootViewController) {
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"KINGMOD"
+                                                                           message:@"Bypass ve Hile Aktif Edildi!\nİyi Oyunlar Kanka."
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"Tamam"
+                                                               style:UIAlertActionStyleDefault
+                                                             handler:nil];
+            [alert addAction:okAction];
+            
+            // Eğer halihazırda bir controller sunuluyorsa onun üzerinden göster
+            UIViewController *topController = rootViewController;
+            while (topController.presentedViewController) {
+                topController = topController.presentedViewController;
+            }
+            [topController presentViewController:alert animated:YES completion:nil];
+            NSLog(@"[KINGMOD] Alert başarıyla gösterildi.");
+        }
     });
 }
 
@@ -50,39 +73,14 @@ __attribute__((constructor)) static void initialize_bypass() {
 
     // 1. Sistem Fonksiyonlarını Hookla
     DobbyHook((void *)sysctl, (void *)my_sysctl, (void **)&orig_sysctl);
-    DobbyHook((void *)dlopen, (void *)((void* (*)(const char*, int))[](const char* path, int mode) -> void* {
-        if (path) NSLog(@"[KINGMOD] dlopen: %s", path);
-        return ((void* (*)(const char*, int))dlsym(RTLD_DEFAULT, "dlopen"))(path, mode);
-    }), NULL);
-
-    // 2. Hile Aktif Yazısını Göster
+    
+    // 2. Hile Aktif Yazısını Konsola Yaz
     NSLog(@"*******************************************");
     NSLog(@"*      KINGMOD BYPASS AKTİF EDİLDİ        *");
     NSLog(@"*******************************************");
     
-    // Uygulama açıldıktan 5 saniye sonra ekranda Alert göster
+    // 3. Uygulama açıldığında ekranda Alert göster
     dispatch_async(dispatch_get_main_queue(), ^{
-        if ([UIApplication sharedApplication].keyWindow) {
-            show_active_alert();
-        } else {
-            // Eğer henüz pencere hazır değilse bildirim merkezini dinle
-            [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
-                                                              object:nil
-                                                               queue:[NSOperationQueue mainQueue]
-                                                          usingBlock:^(NSNotification * _Nonnull note) {
-                show_active_alert();
-            }];
-        }
+        show_active_alert();
     });
 }
-
-// Helper for UI
-@interface UIApplication (Shared)
-+ (id)sharedSelector;
-@end
-
-@implementation UIApplication (Shared)
-+ (id)sharedSelector {
-    return [UIApplication sharedApplication].keyWindow.rootViewController;
-}
-@end
