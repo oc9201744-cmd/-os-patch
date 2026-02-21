@@ -1,9 +1,0 @@
-Package: com.baybars.bypass
-Name: BaybarsBypass
-Depends: mobilesubstrate
-Version: 1.0.0
-Architecture: iphoneos-arm
-Description: Dobby Bypass for Anogs
-Maintainer: Baybars
-Author: Baybars
-Section: Tweaks
