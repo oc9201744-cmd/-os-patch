@@ -6,10 +6,10 @@ SDKVERSION = 16.0
 CC = clang
 CXX = clang++
 
-# Include paths
+# Include paths (include/dobby.h)
 INCLUDE_PATHS = -I./include
 
-# Library paths (libdobby.a is now in the current directory)
+# Library paths (libdobby.a is in the current directory)
 LIBRARY_PATHS = -L.
 
 # Libraries to link
