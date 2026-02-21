@@ -1,20 +1,17 @@
-ARCHS = arm64 arm64e
-TARGET = iphone:clang:latest:14.0
-DEBUG = 0
-FINALPACKAGE = 1
+export ARCHS = arm64 arm64e
+export TARGET = iphone:clang:latest:14.0
+export SYSROOT = $(THEOS)/sdks/iPhoneOS14.5.sdk # SDK yoluna göre düzenle
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = BypassTweak
 
-# Sadece Tweak.xm dosyanı ve Dobby'yi dahil et
-$(TWEAK_NAME)_FILES = Tweak.xm
+# .xm yerine .mm kullanarak Logos işlemcisini (Substrate gerektiren) devre dışı bırakıyoruz
+$(TWEAK_NAME)_FILES = Tweak.mm
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc -Iinclude
-
-# Substrate bağımlılığını tamamen yok eden ve Dobby'yi bağlayan satır:
+# Substrate'i aramayı durduran ve Dobby'yi bağlayan sihirli satır:
 $(TWEAK_NAME)_LDFLAGS = -L. -ldobby -undefined dynamic_lookup
 
-# Sadece gerekli frameworkleri bırak
-$(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation
+$(TWEAK_NAME)_FRAMEWORKS = UIKit Foundation Security
 
 include $(THEOS_MAKE_PATH)/tweak.mk
