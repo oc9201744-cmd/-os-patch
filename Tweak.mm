@@ -1,78 +1,50 @@
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 #import <mach-o/dyld.h>
 #include <string.h>
 #include <dlfcn.h>
-#include <stdint.h>
 
+// 1. HATA ÇÖZÜMÜ: DobbyHook fonksiyonunu derleyiciye tanıtıyoruz
 extern "C" int DobbyHook(void *address, void *replace_call, void **origin_call);
 
-typedef uint64_t _QWORD;
+// Loglama Makrosu
+#define LOG(fmt, ...) NSLog(@"[AnogsBypass] " fmt, ##__VA_ARGS__)
 
-uintptr_t anogs_base = 0;
-void *anogs_backup = NULL;
-size_t anogs_size = 0x300000; 
+// Orijinal veriyi saklayacak tampon (Analiz.txt 0x4224 adresindeki ilk 8 byte)
+unsigned char original_buffer[8] = {0xFD, 0x7B, 0xBF, 0xA9, 0xFD, 0x03, 0x00, 0x91}; 
 
+uintptr_t target_base = 0;
 int (*orig_memcmp)(const void *s1, const void *s2, size_t n);
 
-// --- 1. FONKSİYON: sub_6D1E0 (Veri Temizliği) ---
-void (*orig_sub_6D1E0)(uint64_t a1);
-void new_sub_6D1E0(uint64_t a1) {
-    if (orig_sub_6D1E0) orig_sub_6D1E0(a1);
-    
-    // Senin analizindeki offsetleri sıfırlıyoruz
-    *(uint64_t *)(a1 + 1000) = 0LL;
-    *(uint8_t *)(a1 + 1040) = 0;
-    *(uint8_t *)(a1 + 1362) = 0; // Heartbeat sustur
-    *(uint32_t *)(a1 + 328) = 0; // Hata sayacı sıfırla
-}
-
-// --- 2. YENİ FONKSİYON: sub_8DFC (Rapor Postacısını Susturma) ---
-// Bu fonksiyon SendCmd: çağrısını yapar. return 0 yaparak raporu çöpe atıyoruz.
-uint64_t (*orig_sub_8DFC)(uint64_t a1);
-uint64_t new_sub_8DFC(uint64_t a1) {
-    // Orijinali çağırmıyoruz veya çağırsak bile sonucunu manipüle ediyoruz.
-    // Fotoğraftaki adamın mantığına göre raporun gönderilmesini engellemek için:
-    // orig_sub_8DFC(a1); // İstersen çalıştır ama biz raporu boş göndermiş olduk zaten.
-    
-    return 0LL; // Her zaman başarılı/boş dönmesini sağla
-}
-
-// --- Bütünlük Kontrolü Maskeleme ---
+// Bütünlük kontrolünü kör eden fonksiyon
 int new_memcmp(const void *s1, const void *s2, size_t n) {
     uintptr_t addr1 = (uintptr_t)s1;
     uintptr_t addr2 = (uintptr_t)s2;
-    if (anogs_base != 0 && anogs_backup != NULL) {
-        if (addr1 >= anogs_base && addr1 < (anogs_base + anogs_size)) {
-            size_t offset = addr1 - anogs_base;
-            return orig_memcmp((void *)((uintptr_t)anogs_backup + offset), s2, n);
-        }
-        if (addr2 >= anogs_base && addr2 < (anogs_base + anogs_size)) {
-            size_t offset = addr2 - anogs_base;
-            return orig_memcmp(s1, (void *)((uintptr_t)anogs_backup + offset), n);
-        }
+    uintptr_t target_addr = target_base + 0x4224;
+
+    // Eğer sistem bizim yamalı adresimizi taramaya kalkarsa
+    if (addr1 == target_addr || addr2 == target_addr) {
+        LOG("!!! INTEGRITY CHECK YAKALANDI !!! Sahte veri gönderiliyor...");
+        
+        if (addr1 == target_addr) return orig_memcmp(original_buffer, s2, n);
+        return orig_memcmp(s1, original_buffer, n);
     }
+
     return orig_memcmp(s1, s2, n);
 }
 
 __attribute__((constructor))
-static void global_init() {
-    void *m_ptr = dlsym(RTLD_DEFAULT, "memcmp");
-    if (m_ptr) DobbyHook(m_ptr, (void *)new_memcmp, (void **)&orig_memcmp);
+static void setup_bypass() {
+    LOG("Bypass Dylib Yüklendi. Sistem başlatılıyor...");
 
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (name && (strstr(name, "anogs") || strstr(name, "ace_cs2"))) {
-            anogs_base = (uintptr_t)_dyld_get_image_vmaddr_slide(i);
-            anogs_backup = malloc(anogs_size);
-            memcpy(anogs_backup, (void *)anogs_base, anogs_size);
-            
-            // sub_6D1E0 (Veriyi hazırlayan yer)
-            DobbyHook((void *)(anogs_base + 0x6D1E0), (void *)new_sub_6D1E0, (void **)&orig_sub_6D1E0);
-            
-            // sub_8DFC (Veriyi postalayan yer)
-            DobbyHook((void *)(anogs_base + 0x8DFC), (void *)new_sub_8DFC, (void **)&orig_sub_8DFC);
-            
-            break;
-        }
+    // 2. HATA ÇÖZÜMÜ: _dyld_get_image_vmaddr_slide kullanımı için doğru index
+    // 0 genellikle ana binary'dir (ShadowTrackerExtra)
+    target_base = (uintptr_t)_dyld_get_image_vmaddr_slide(0); 
+    LOG("Base Adresi: 0x%lx", target_base);
+
+    // Integrity Check'i kör etmek için memcmp'yi kancala
+    void *memcmp_ptr = dlsym(RTLD_DEFAULT, "memcmp");
+    if (memcmp_ptr && DobbyHook(memcmp_ptr, (void *)new_memcmp, (void **)&orig_memcmp) == 0) {
+        LOG("BAŞARILI: memcmp kancalandı. Tarayıcı kör edildi.");
+    } else {
+        LOG("HATA: memcmp kancalanamadı!");
     }
-}
