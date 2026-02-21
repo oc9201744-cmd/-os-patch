@@ -21,7 +21,7 @@ CXXFLAGS = $(CFLAGS) -std=c++17
 LDFLAGS = -arch $(ARCHS) -isysroot $(shell xcrun --sdk iphoneos --show-sdk-path) $(LIBRARY_PATHS) $(LIBRARIES)
 
 # Source files
-SOURCES = main.mm
+SOURCES = Tweak.mm
 
 # Object files
 OBJECTS = $(SOURCES:.mm=.o)
