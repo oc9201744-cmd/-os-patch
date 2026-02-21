@@ -1,51 +1,73 @@
+#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <substrate.h>
 #import <mach-o/dyld.h>
 
+// Dobby fonksiyonlarını içeri alalım
 #ifdef __cplusplus
 extern "C" {
 #endif
+    int DobbyHook(void *address, void *replace_call, void **origin_call);
     int DobbyCodePatch(void *address, uint8_t *buffer, uint32_t buffer_size);
 #ifdef __cplusplus
 }
 #endif
 
-void show_v4_toast(NSString *msg) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].windows.firstObject;
-        if (window) {
-            UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(window.frame.size.width/4, 150, window.frame.size.width/2, 40)];
-            label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.8];
-            label.textColor = [UIColor cyanColor];
-            label.textAlignment = NSTextAlignmentCenter;
-            label.text = msg;
-            label.font = [UIFont boldSystemFontOfSize:13];
-            label.layer.cornerRadius = 15;
-            label.clipsToBounds = YES;
-            [window addSubview:label];
-            [UIView animateWithDuration:5.0 animations:^{ label.alpha = 0; } completion:^(BOOL finished){ [label removeFromSuperview]; }];
-        }
-    });
-}
+// --- Hook Fonksiyonları (Dobby için) ---
+// Not: Orijinal fonksiyonu çağırmak istersen orig_ değişkenlerini kullanabilirsin.
 
+static int (*orig_sub_19D98)(void* a1, void* a2);
+int hook_sub_19D98(void* a1, void* a2) { return 0; } // JB Check Bypass
+
+static void* (*orig_sub_10C24)(void* a1);
+void* hook_sub_10C24(void* a1) { return NULL; } // AC Dispatcher Bypass
+
+static void (*orig_sub_19DF8)(void);
+void hook_sub_19DF8(void) { return; }
+
+static void (*orig_sub_4A130)(void);
+void hook_sub_4A130(void) { return; } // Report Bypass
+
+static void (*orig_sub_4432C)(void* a1);
+void hook_sub_4432C(void* a1) { return; } // Case 35
+
+static void (*orig_sub_48884)(void* a1);
+void hook_sub_48884(void* a1) { return; }
+
+static void (*orig_sub_19F54)(void* a1, void* a2, size_t a3);
+void hook_sub_19F54(void* a1, void* a2, size_t a3) { return; } // Integrity
+
+static void (*orig_sub_19F64)(void* a1);
+void hook_sub_19F64(void* a1) { return; }
+
+// --- Objective-C Hookları ---
+%hook ScreenShot
+- (void*)getBufFromImage:(id)arg1 { return NULL; }
+- (void)takeScreenShotEx:(id)arg1 { /* Engellendi */ }
+%end
+
+// --- Başlatıcı ---
 %ctor {
-    NSLog(@"[V4_DEBUG] 🛠️ Patching 0x371E0 with MOV X0, #0...");
+    NSLog(@"[V4_DOBBY] 🚀 Ultimate Bypass Yukleniyor...");
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        uintptr_t base_addr = (uintptr_t)_dyld_get_image_header(0);
-        uintptr_t target_addr = base_addr + 0x371E0; 
+    // ASLR Slide değerini al
+    uintptr_t slide = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
 
-        // MOV X0, #0 (00 00 80 D2) ve RET (C0 03 5F D6)
-        uint8_t zero_patch[] = {0x00, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6}; 
-        
-        int result = DobbyCodePatch((void *)target_addr, zero_patch, 8);
-        
-        if (result == 0) {
-            NSLog(@"[V4_DEBUG] ✅ Patch Basarili (X0=0): 0x371E0");
-            show_v4_toast(@"Patch Aktif: MOV X0, #0");
-        } else {
-            NSLog(@"[V4_DEBUG] ❌ Patch Hatasi! Kod: %d", result);
-        }
-    });
+    // Dobby ile Fonksiyon Hooklama (MSHookFunction yerine DobbyHook)
+    DobbyHook((void*)(slide + 0x19D98), (void*)hook_sub_19D98, (void**)&orig_sub_19D98);
+    DobbyHook((void*)(slide + 0x10C24), (void*)hook_sub_10C24, (void**)&orig_sub_10C24);
+    DobbyHook((void*)(slide + 0x19DF8), (void*)hook_sub_19DF8, (void**)&orig_sub_19DF8);
+    DobbyHook((void*)(slide + 0x4A130), (void*)hook_sub_4A130, (void**)&orig_sub_4A130);
+    DobbyHook((void*)(slide + 0x4432C), (void*)hook_sub_4432C, (void**)&orig_sub_4432C);
+    DobbyHook((void*)(slide + 0x48884), (void*)hook_sub_48884, (void**)&orig_sub_48884);
+    DobbyHook((void*)(slide + 0x19F54), (void*)hook_sub_19F54, (void**)&orig_sub_19F54);
+    DobbyHook((void*)(slide + 0x19F64), (void*)hook_sub_19F64, (void**)&orig_sub_19F64);
+
+    // --- Manuel Byte Patch (Önceki istediğin 0x371E0 adresini de ekledim) ---
+    uintptr_t target_371E0 = slide + 0x371E0;
+    uint8_t zero_ret[] = {0x00, 0x00, 0x80, 0xD2, 0xC0, 0x03, 0x5F, 0xD6}; // MOV X0, #0; RET
+    DobbyCodePatch((void*)target_371E0, zero_ret, 8);
+
+    NSLog(@"[V4_DOBBY] ✅ Tüm kancalar ve yamalar atıldı!");
+
+    %init; // Obj-C hooklarını aktifleştir
 }
