@@ -1,17 +1,17 @@
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #import <mach-o/dyld.h>
 #import <sys/sysctl.h>
 #import <dlfcn.h>
 #import <dobby.h>
 
 /**
- * KINGMOD BYPASS VE HOOK UYARLAMASI (Non-Jailbreak) - Düzeltilmiş Versiyon
- * Dobby'nin yeni versiyonlarında DobbyHookType ve kMemoryOperationSuccess tanımları gerekmez.
+ * KINGMOD BYPASS VE HOOK UYARLAMASI (Non-Jailbreak)
+ * Hile aktif olduğunda ekrana bildirim gösterir.
  */
 
 // --- Orijinal Fonksiyon Prototipleri ---
 int (*orig_sysctl)(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
-int (*orig_sysctlbyname)(const char *name, void *oldp, size_t *oldlenp, void *newp, size_t newlen);
 void* (*orig_dlopen)(const char* path, int mode);
 
 // --- Bypass Fonksiyonları ---
@@ -23,45 +23,66 @@ int my_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
         if (oldp && oldlenp && *oldlenp >= sizeof(struct kinfo_proc)) {
             struct kinfo_proc *kp = (struct kinfo_proc *)oldp;
             if (kp->kp_proc.p_flag & P_TRACED) {
-                NSLog(@"[Bypass] Anti-Debug (P_TRACED) tespit edildi ve temizlendi.");
-                kp->kp_proc.p_flag &= ~P_TRACED; // P_TRACED bayrağını temizle
+                kp->kp_proc.p_flag &= ~P_TRACED;
             }
         }
     }
     return ret;
 }
 
-// Anti-Cheat (dlopen) Hook
-void* my_dlopen(const char* path, int mode) {
-    if (path) {
-        NSLog(@"[Bypass] dlopen çağrıldı: %s", path);
-    }
-    return orig_dlopen(path, mode);
-}
-
-// --- Bellek Yama (Patch) Yardımcı Fonksiyonu ---
-void patch_memory(uintptr_t address, const char* data, size_t size) {
-    uintptr_t slide = _dyld_get_image_vmaddr_slide(0);
-    uintptr_t target = slide + address;
-    
-    // DobbyCodePatch bellek korumasını otomatik halleder. 
-    // Yeni versiyonda dönüş değeri kontrolü basitleştirilmiştir.
-    DobbyCodePatch((void *)target, (uint8_t *)data, size);
-    NSLog(@"[Bypass] 0x%lx adresine yama denendi.", address);
+// --- Hile Aktif Bildirimi ---
+void show_active_alert() {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"KINGMOD"
+                                                                       message:@"Bypass ve Hile Aktif Edildi!\nİyi Oyunlar Kanka."
+                                                                preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"Tamam"
+                                                           style:UIAlertActionStyleDefault
+                                                         handler:nil];
+        [alert addAction:okAction];
+        [[UIApplication sharedSelector] presentViewController:alert animated:YES completion:nil];
+    });
 }
 
 // --- Ana Giriş (Constructor) ---
 __attribute__((constructor)) static void initialize_bypass() {
-    NSLog(@"[Bypass] Kingmod Bypass Motoru Başlatılıyor...");
+    NSLog(@"[KINGMOD] Bypass Motoru Başlatılıyor...");
 
-    // 1. Sistem Fonksiyonlarını Hookla (Yeni Dobby Sözdizimi)
-    // DobbyHook(adres, yeni_fonksiyon, orijinal_fonksiyon_saklama_adresi)
+    // 1. Sistem Fonksiyonlarını Hookla
     DobbyHook((void *)sysctl, (void *)my_sysctl, (void **)&orig_sysctl);
-    DobbyHook((void *)sysctlbyname, (void *)orig_sysctlbyname, (void **)&orig_sysctlbyname);
-    DobbyHook((void *)dlopen, (void *)my_dlopen, (void **)&orig_dlopen);
+    DobbyHook((void *)dlopen, (void *)((void* (*)(const char*, int))[](const char* path, int mode) -> void* {
+        if (path) NSLog(@"[KINGMOD] dlopen: %s", path);
+        return ((void* (*)(const char*, int))dlsym(RTLD_DEFAULT, "dlopen"))(path, mode);
+    }), NULL);
 
-    // 2. Kritik Adreslere Bellek Yamaları (Örnek)
-    // patch_memory(0x1D71DDF, "\x1F\x20\x03\xD5", 4); 
+    // 2. Hile Aktif Yazısını Göster
+    NSLog(@"*******************************************");
+    NSLog(@"*      KINGMOD BYPASS AKTİF EDİLDİ        *");
+    NSLog(@"*******************************************");
     
-    NSLog(@"[Bypass] Tüm hooklar ve yamalar uygulandı.");
+    // Uygulama açıldıktan 5 saniye sonra ekranda Alert göster
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([UIApplication sharedApplication].keyWindow) {
+            show_active_alert();
+        } else {
+            // Eğer henüz pencere hazır değilse bildirim merkezini dinle
+            [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidFinishLaunchingNotification
+                                                              object:nil
+                                                               queue:[NSOperationQueue mainQueue]
+                                                          usingBlock:^(NSNotification * _Nonnull note) {
+                show_active_alert();
+            }];
+        }
+    });
 }
+
+// Helper for UI
+@interface UIApplication (Shared)
++ (id)sharedSelector;
+@end
+
+@implementation UIApplication (Shared)
++ (id)sharedSelector {
+    return [UIApplication sharedApplication].keyWindow.rootViewController;
+}
+@end
