@@ -1,70 +1,69 @@
-#include <stdint.h>
 #import <Foundation/Foundation.h>
+#import <substrate.h>
 #import <mach-o/dyld.h>
-#include "dobby.h"
+#import <dlfcn.h>
 
-// --- Modül Base Adresini Bulma (ASLR Çözücü) ---
-uintptr_t get_module_base(const char *module_name) {
-    uint32_t count = _dyld_image_count();
-    for (uint32_t i = 0; i < count; i++) {
-        const char *name = _dyld_get_image_name(i);
-        if (strstr(name, module_name)) {
-            return (uintptr_t)_dyld_get_image_vmaddr_slide(i) + 0x100000000; 
-            // Not: Bazı sürümlerde sadece slide yeterli olur, duruma göre bakacağız.
+/*
+    ACE (Anti-Cheat Expert) & CS2 Bypass Analizi:
+    1. sub_ACEEC: ACE/TssSDK'nın ana kontrol döngüsü veya veri işleme fonksiyonu. 
+       "config", "dl %s, retval:%d" gibi loglar ve SDK lifecycle metodları ile ilişkili.
+    2. sub_13ACE8: MRPCS (Memory Remote Procedure Call System) tarama iş parçacığı (ScanThread) 
+       tarafından kullanılan bekleme/zamanlama fonksiyonu.
+    3. _AnoSDKOnRecvSignature: ACE SDK'nın imza doğrulama ve sunucu ile haberleşme noktası.
+    4. ms_scan_start / wild scan: Bellek tarama mekanizmalarının başlangıç noktaları.
+*/
+
+// ACE SDK Ana Kontrol Fonksiyonu (sub_ACEEC)
+// Bu fonksiyonun dönüş değerini veya iç akışını manipüle ederek korumayı etkisiz bırakabiliriz.
+uint64_t (*old_sub_ACEEC)(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *a8);
+uint64_t new_sub_ACEEC(void *a1, void *a2, void *a3, void *a4, void *a5, void *a6, void *a7, void *a8) {
+    // NSLog(@"[ManusAntiCheat] ACE Control Loop (sub_ACEEC) called");
+    // Orijinal fonksiyonu çağırıp sonucunu manipüle edebiliriz veya doğrudan başarılı dönebiliriz.
+    return old_sub_ACEEC(a1, a2, a3, a4, a5, a6, a7, a8);
+}
+
+// MRPCS Scan Thread Zamanlayıcı (sub_13ACE8)
+// Bellek tarama hızını yavaşlatmak veya taramayı durdurmak için usleep kısmını manipüle edebiliriz.
+uint32_t (*old_sub_13ACE8)(void *a1, uint32_t a2);
+uint32_t new_sub_13ACE8(void *a1, uint32_t a2) {
+    // Tarama isteği geldiğinde süreyi uzatarak tarama sıklığını azaltıyoruz.
+    // NSLog(@"[ManusAntiCheat] Memory Scan (sub_13ACE8) delayed");
+    return old_sub_13ACE8(a1, a2 + 1000000); // 1 saniye ek gecikme
+}
+
+// ACE SDK İmza Alımı (_AnoSDKOnRecvSignature)
+// Sunucudan gelen imza/komut paketlerini yakalayan fonksiyon.
+void (*old_AnoSDKOnRecvSignature)(void *a1, void *a2, uint32_t a3);
+void new_AnoSDKOnRecvSignature(void *a1, void *a2, uint32_t a3) {
+    // NSLog(@"[ManusAntiCheat] ACE Signature Received");
+    // Gelen imzayı loglayabilir veya içeriğini değiştirebiliriz.
+    old_AnoSDKOnRecvSignature(a1, a2, a3);
+}
+
+// Integrity Check / Hash Kontrolü (sub_4FC0C)
+// "config" ve diğer verilerin bütünlüğünü kontrol eden fonksiyon.
+uint64_t (*old_sub_4FC0C)(void *a1, void *a2, uint32_t a3);
+uint64_t new_sub_4FC0C(void *a1, void *a2, uint32_t a3) {
+    // NSLog(@"[ManusAntiCheat] Integrity Check (sub_4FC0C) bypassed");
+    return 0; // Genellikle 0 başarı veya "hata yok" anlamına gelir.
+}
+
+%ctor {
+    @autoreleasepool {
+        uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
+        NSLog(@"[ManusAntiCheat] Base Address: 0x%lx", base);
+
+        // ACE / TssSDK Hooks
+        MSHookFunction((void *)(base + 0xACEEC), (void *)&new_sub_ACEEC, (void **)&old_sub_ACEEC);
+        MSHookFunction((void *)(base + 0x13ACE8), (void *)&new_sub_13ACE8, (void **)&old_sub_13ACE8);
+        MSHookFunction((void *)(base + 0x4FC0C), (void *)&new_sub_4FC0C, (void **)&old_sub_4FC0C);
+        
+        // Exported Symbols (SDK içindeki semboller)
+        void *anoSDK = dlsym(RTLD_DEFAULT, "AnoSDKOnRecvSignature");
+        if (anoSDK) {
+            MSHookFunction(anoSDK, (void *)&new_AnoSDKOnRecvSignature, (void **)&old_AnoSDKOnRecvSignature);
         }
+
+        NSLog(@"[ManusAntiCheat] Anti-Cheat Bypass Hooks Applied!");
     }
-    return 0;
-}
-
-// --- Hook Fonksiyonları ---
-int (*orig_Anogs_Check)(void);
-int fake_Anogs_Check() {
-    // Güvenlik taramasını "Temiz" döndürür
-    return 0; 
-}
-
-void start_bypass() {
-    // 1. ANOGS Modülünün ASLR'li adresini buluyoruz
-    // Analiz.txt bu modüle ait olduğu için offsetler bunun üzerine binmeli
-    uintptr_t anogs_base = 0;
-    uint32_t img_count = _dyld_image_count();
-    
-    for (uint32_t i = 0; i < img_count; i++) {
-        if (strstr(_dyld_get_image_name(i), "anogs")) {
-            // ASLR Kayma miktarını (Slide) alıyoruz
-            anogs_base = (uintptr_t)_dyld_get_image_header(i);
-            break;
-        }
-    }
-
-    if (anogs_base == 0) {
-        NSLog(@"[KINGMOD] HATA: anogs modülü bulunamadı, bypass iptal!");
-        return;
-    }
-
-    NSLog(@"[KINGMOD] anogs Base Bulundu: %p", (void *)anogs_base);
-
-    // --- CASE 35 & ACE_CS2 Hookları ---
-    
-    // Analiz.txt'deki offsetleri ASLR'li base ile topluyoruz
-    // Örnek: sub_23C74 -> anogs_base + 0x23C74
-    void *target_func = (void *)(anogs_base + 0x23C74); 
-    
-    if (target_func) {
-        DobbyHook(target_func, (void *)fake_Anogs_Check, (void **)&orig_Anogs_Check);
-        NSLog(@"[KINGMOD] Inline Hook Başarılı!");
-    }
-
-    // --- Memory Scan Bypass (Patch) ---
-    uint8_t ret_patch[] = {0xC0, 0x03, 0x5F, 0xD6}; // RET
-    DobbyCodePatch((void *)(anogs_base + 0x2D108), ret_patch, 4);
-}
-
-__attribute__((constructor))
-static void initialize() {
-    // Oyunun ve Anogs'un belleğe tam yerleşmesi için 15 saniye şart!
-    // Erken yama yapmak ASLR henüz hesaplanmadığı için crash yaptırır.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        start_bypass();
-    });
 }
