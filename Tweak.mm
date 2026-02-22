@@ -14,6 +14,7 @@ void* fake_dlopen(const char* path, int mode) {
             NSLog(@"[KINGMOD] Yakaladım! Orijinal anogs yerine 002.bin yükleniyor...");
             
             // 002.bin dosyasının yolunu bul (IPA içine attığın yer)
+            // Görselden anlaşıldığı üzere 002.bin ana uygulama paketi içinde bulunuyor.
             NSString *fakePath = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin"];
             
             if (fakePath) {
@@ -27,9 +28,10 @@ void* fake_dlopen(const char* path, int mode) {
 
 __attribute__((constructor))
 static void setup_redirection() {
-    // dlopen fonksiyonuna kanca atıyoruz. 
-    // Oyun daha hiçbir güvenlik modülünü yüklemeden bu çalışmalı!
-    DobbyHook((void *)dlopen, (void *)fake_dlopen, (void **)&orig_dlopen);
-    
-    NSLog(@"[KINGMOD] Modül saptırma sistemi aktif. Truva atı hazır.");
+    @autoreleasepool {
+        // dlopen fonksiyonuna kanca atıyoruz.
+        // Oyun daha hiçbir güvenlik modülünü yüklemeden bu çalışmalı!
+        DobbyHook((void *)dlopen, (void *)fake_dlopen, (void **)&orig_dlopen);
+        NSLog(@"[KINGMOD] Modül saptırma sistemi aktif. Truva atı hazır.");
+    }
 }
