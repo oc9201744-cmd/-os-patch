@@ -1,98 +1,69 @@
+#include <stdint.h>
 #import <Foundation/Foundation.h>
-#import <UIKit/UIKit.h>
-#import <mach-o/dyld.h>
-#import <dlfcn.h>
 #import <objc/runtime.h>
+#include "dobby.h"
+#include <dlfcn.h>
+#include <mach-o/dyld.h>
 
-/**
- * KINGMOD ULTIMATE BYPASS & HOOK (Non-Jailbreak) - TAM GİZLİLİK (STEALTH MODE)
- * 
- * Strateji: Ban sebebi artık dylib'in varlığı olduğu için, 
- * dylib'i bellekte tamamen gizlemeye ve iz bırakmamaya odaklanıyoruz.
- * 
- * 1. Dylib Gizleme: Dylib yüklendiğinde kendi ismini ve yolunu 
- *    bellekte "eritiyoruz" (maskeleme).
- * 2. Objective-C Swizzling: Yine Apple'ın resmi runtime fonksiyonlarını 
- *    kullanarak metodları değiştiriyoruz.
- * 3. 30 Saniye Gecikme: Gecikmeyi 30 saniyeye çıkarıyoruz.
- */
+// --- Orijinal Fonksiyon Tanımları ---
+int (*orig_AnoSDK_Report)(void *a, int b, int c);
+int (*orig_Tss_SecurityCheck)(void *a);
+BOOL (*orig_fileExistsAtPath)(id self, SEL _cmd, NSString *path);
 
-// --- Hayalet Raporlama: Hiçbir veri gönderme ---
-void my_TssSendCmd(id self, SEL _cmd, const char *cmd) {
-    // Raporu logla ama orijinali çağırma
-    // NSLog(@"[KINGMOD] Stealth Mode: Rapor engellendi.");
-    return;
+// --- 1. Integrity & Report Bypass (Case 35 / ace_cs2) ---
+// Oyunun sunucuya "Hile Bulundu" raporu göndermesini engeller
+int fake_AnoSDK_Report(void *a, int b, int c) {
+    NSLog(@"[KINGMOD] AnoSDK Raporlama Engellendi!");
+    return 0; // Her zaman başarılı/temiz döndür
 }
 
-// --- Hile Aktif Bildirimi (UI) ---
-void show_kingmod_stealth_alert() {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        
-        if (@available(iOS 13.0, *)) {
-            for (UIWindowScene* windowScene in [UIApplication sharedApplication].connectedScenes) {
-                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                    for (UIWindow *w in windowScene.windows) {
-                        if (w.isKeyWindow) {
-                            window = w;
-                            break;
-                        }
-                    }
-                }
-                if (window) break;
-            }
-        }
-        
-        if (!window) {
-            window = [UIApplication sharedApplication].keyWindow;
-        }
-
-        UIViewController *rootVC = window.rootViewController;
-        if (rootVC) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"👑 KINGMOD STEALTH 👑"
-                                                                           message:@"Tam Gizlilik Modu Aktif!\nDylib Bellekte Gizlendi.\nBan Riski Minimuma İndirildi.\nİyi Oyunlar Kanka!"
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"TAMAM" style:UIAlertActionStyleDefault handler:nil]];
-            
-            UIViewController *topVC = rootVC;
-            while (topVC.presentedViewController) {
-                topVC = topVC.presentedViewController;
-            }
-            [topVC presentViewController:alert animated:YES completion:nil];
-        }
-    });
+// --- 2. Memory Scan & Watchdog Bypass ---
+// Bellek taraması yapan döngüyü kandırır
+int fake_Tss_SecurityCheck(void *a) {
+    // TssSDK'nın güvenlik taramasına her zaman "Sıkıntı Yok" der
+    return 1; 
 }
 
-// --- Stealth Modu İşlemini Başlat ---
-void start_kingmod_stealth_bypass() {
-    NSLog(@"[KINGMOD] Stealth Modu Başlatılıyor...");
-    
-    // 1. Dylib Gizleme: Dylib'in ismini ve yolunu bellekte gizlemeye çalışıyoruz.
-    // Bu, Tencent'in (TSS) dylib listesini taramasını zorlaştırır.
-    
-    // 2. Objective-C Swizzling
-    Class tssClass = NSClassFromString(@"TssIosMainThreadDispatcher");
-    if (tssClass) {
-        SEL originalSelector = NSSelectorFromString(@"SendCmd:");
-        Method originalMethod = class_getInstanceMethod(tssClass, originalSelector);
-        
-        if (originalMethod) {
-            method_setImplementation(originalMethod, (IMP)my_TssSendCmd);
-            NSLog(@"[KINGMOD] Stealth Modu: TSS Ana Kanalı Kapatıldı.");
-            show_kingmod_stealth_alert();
-            return;
-        }
+// --- 3. File System Stealth (İmza Kontrolü) ---
+// Oyunun cihazda dylib veya Jailbreak dosyalarını aramasını engeller
+BOOL fake_fileExistsAtPath(id self, SEL _cmd, NSString *path) {
+    if ([path containsString:@"libdobby"] || [path containsString:@"Cydia"] || 
+        [path containsString:@".dylib"] || [path containsString:@"Dolphins"]) {
+        return NO;
     }
-    
-    NSLog(@"[KINGMOD] Stealth Modu: TSS Sınıfı Bulunamadı!");
+    return orig_fileExistsAtPath(self, _cmd, path);
 }
 
-// --- Ana Giriş (Constructor) ---
-__attribute__((constructor)) static void kingmod_init() {
-    NSLog(@"[KINGMOD] Oyun Başlatıldı, Stealth Modu İçin 30 Saniye Bekleniyor...");
+// --- Ana Fonksiyon: Hooking İşlemleri ---
+void init_antiban() {
+    uintptr_t base = (uintptr_t)_dyld_get_image_vmaddr_slide(0);
+
+    // ANALİZ.TXT'DEN GELEN KRİTİK OFFSETLER
+    // Not: Bu offsetler Analiz dosyasındaki fonksiyon giriş adresleridir.
     
-    // Gecikmeyi 30 saniye olarak güncelliyoruz
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        start_kingmod_stealth_bypass();
+    // AnoSDK Report Bypass (Örn: sub_23C74 civarı raporlama mantığı)
+    DobbyHook((void *)(base + 0x23C74), (void *)fake_AnoSDK_Report, (void **)&orig_AnoSDK_Report);
+    
+    // Tss Security/Watchdog Bypass (Örn: sub_25190)
+    DobbyHook((void *)(base + 0x25190), (void *)fake_Tss_SecurityCheck, (void **)&orig_Tss_SecurityCheck);
+
+    // NSFileManager Hook (Dosya taramasını kör etmek için)
+    Method m = class_getInstanceMethod([NSFileManager class], @selector(fileExistsAtPath:));
+    orig_fileExistsAtPath = (BOOL (*)(id, SEL, NSString *))method_getImplementation(m);
+    method_setImplementation(m, (IMP)fake_fileExistsAtPath);
+
+    // --- Case 35 Integrity Patch ---
+    // Bellek taramasını doğrudan susturmak için 'RET' (0xC0035FD6) yaması
+    uint8_t ret_patch[] = {0xC0, 0x03, 0x5F, 0xD6};
+    DobbyCodePatch((void *)(base + 0x2D108), ret_patch, 4); 
+
+    NSLog(@"[KINGMOD] Tüm Hooklar ve Patchler Aktif! GWorld için hazırsın.");
+}
+
+__attribute__((constructor))
+static void initialize() {
+    // Anti-cheat'in yüklenmesi için 5 saniye bekle, sonra hookla
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        init_antiban();
     });
 }
