@@ -9,41 +9,40 @@ void* (*orig_dlopen)(const char* path, int mode);
 
 void* fake_dlopen(const char* path, int mode) {
     if (path != NULL) {
-        // Loglara her şeyi bas ki ESign'da ne yükleniyor gör
-        NSLog(@"[KINGMOD] dlopen: %s", path);
+        // Loglara her şeyi basıyoruz, ESign konsolundan takip et
+        NSLog(@"[KINGMOD_DEBUG] dlopen su dosyayi yukluyor: %s", path);
 
-        if (strstr(path, "anogs")) {
+        // Kontrolü genişletiyoruz: Büyük-küçük harf duyarsız yapalım
+        NSString *currentPath = [NSString stringWithUTF8String:path];
+        if ([currentPath.lowercaseString containsString:@"anogs"]) {
+            
+            // Dosyanın yerini bul
             NSString *fakePath = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin"];
+            
             if (fakePath) {
-                NSLog(@"[KINGMOD] HEDEF BULUNDU! 002.bin yukleniyor...");
+                NSLog(@"[KINGMOD_SUCCESS] HEDEF YAKALANDI! Orijinal %s yerine %@ yukleniyor!", path, fakePath);
+                // Iste burada sihir gerceklesiyor: Orijinal yolu sahtesiyle degistiriyoruz
                 return orig_dlopen([fakePath UTF8String], mode);
+            } else {
+                NSLog(@"[KINGMOD_ERROR] 002.bin dosyasi IPA icinde bulunamadi!");
             }
         }
     }
     return orig_dlopen(path, mode);
 }
 
-// Dylib yuklendigi an calisacak bolum
 static __attribute__((constructor)) void initialize_kingmod() {
-    // 1. Hemen dlopen'i kancala (Gecikme buraya konmaz!)
+    // 1. dlopen'i kancala
     DobbyHook((void *)dlopen, (void *)fake_dlopen, (void **)&orig_dlopen);
-    
-    NSLog(@"[KINGMOD] Hook atildi, 5 saniye sonra bildirim gelecek...");
 
-    // 2. Sadece görsel bildirim için 5 saniye bekle
+    // 2. Ekrana bildirim bas (Dylib calisiyor mu kaniti)
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        
-        // Ekranda uyarı çıkartma (UI thread üzerinde)
-        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
-        if (rootVC) {
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"KINGMOD" 
-                                        message:@"Bypass ve 002.bin Aktif!" 
-                                        preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Tamam" style:UIAlertActionStyleDefault handler:nil]];
-            [rootVC presentViewController:alert animated:YES completion:nil];
-        } else {
-            // Eğer ekran henüz hazır değilse loglara bas
-            NSLog(@"[KINGMOD] UI HENUZ HAZIR DEGIL AMA KOD CALISIYOR!");
-        }
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, [UIScreen mainScreen].bounds.size.width, 30)];
+        label.text = @"[ KINGMOD BYPASS LOADING... ]";
+        label.textColor = [UIColor greenColor];
+        label.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7];
+        label.textAlignment = NSTextAlignmentCenter;
+        label.font = [UIFont boldSystemFontOfSize:14];
+        [[UIApplication sharedApplication].keyWindow addSubview:label];
     });
 }
