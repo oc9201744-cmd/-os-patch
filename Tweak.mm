@@ -3,13 +3,12 @@
 #import <UIKit/UIKit.h>
 #include <dlfcn.h>
 #include <fcntl.h>
-#include "include/dobby.h" // Include yoluna göre güncelledim
+#include <string.h> // strcasestr için
+#include "include/dobby.h"
 
-// --- Orijinal Fonksiyon Saklayıcılar ---
 void* (*orig_dlopen)(const char* path, int mode);
 int (*orig_open)(const char *path, int oflag, mode_t mode);
 
-// --- Ekrana Bilgi Yazdırma ---
 void show_on_screen(NSString *message, CGFloat yPosition, UIColor *color) {
     dispatch_async(dispatch_get_main_queue(), ^{
         CGRect screenRect = [UIScreen mainScreen].bounds;
@@ -29,37 +28,31 @@ void show_on_screen(NSString *message, CGFloat yPosition, UIColor *color) {
                     break;
                 }
             }
-        } else {
-            window = [UIApplication sharedApplication].keyWindow;
-        }
-        
+        } else { window = [UIApplication sharedApplication].keyWindow; }
         [window addSubview:label];
-        
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [label removeFromSuperview];
         });
     });
 }
 
-// --- 1. Kapı: dlopen Kancası ---
+// Büyük/Küçük harf duyarsız kontrol (Anogs veya anogs ikisini de yakalar)
 void* fake_dlopen(const char* path, int mode) {
-    if (path != NULL && strstr(path, "anogs")) {
+    if (path != NULL && strcasestr(path, "anogs")) {
         NSString *fakePath = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin"];
         if (fakePath) {
-            show_on_screen(@"[DLOPEN] ANOGS -> 002.BIN", 120, [UIColor greenColor]);
+            show_on_screen(@"[DLOPEN] ANOGS YAKALANDI -> 002.BIN", 120, [UIColor greenColor]);
             return orig_dlopen([fakePath UTF8String], mode);
         }
     }
     return orig_dlopen(path, mode);
 }
 
-// --- 2. Kapı: open Kancası ---
 int fake_open(const char *path, int oflag, mode_t mode) {
-    if (path != NULL && strstr(path, "anogs")) {
+    if (path != NULL && strcasestr(path, "anogs")) {
         NSString *fakePath = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin"];
         if (fakePath) {
-            show_on_screen(@"[OPEN] ANOGS -> 002.BIN", 155, [UIColor cyanColor]);
-            // Hatali karakter '宣' silindi
+            show_on_screen(@"[OPEN] ANOGS YAKALANDI -> 002.BIN", 155, [UIColor cyanColor]);
             return orig_open([fakePath UTF8String], oflag, mode);
         }
     }
@@ -69,12 +62,11 @@ int fake_open(const char *path, int oflag, mode_t mode) {
 __attribute__((constructor))
 static void deep_hook_init() {
     @autoreleasepool {
-        // Dobby kancalarını atıyoruz
         DobbyHook((void *)dlopen, (void *)fake_dlopen, (void **)&orig_dlopen);
         DobbyHook((void *)open, (void *)fake_open, (void **)&orig_open);
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            show_on_screen(@"[KINGMOD] DERIN KANCA AKTIF", 50, [UIColor whiteColor]);
+            show_on_screen(@"[KINGMOD] HARF DUYARSIZ KANCA AKTIF", 50, [UIColor whiteColor]);
         });
     }
 }
