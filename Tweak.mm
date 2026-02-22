@@ -53,7 +53,7 @@ void new_AnoSDKDelReportData(void *a1) {
     old_AnoSDKDelReportData(a1);
 }
 
-%ctor {
+__attribute__((constructor)) static void customConstructor() {
     @autoreleasepool {
         // Uygulamanın ana imajının başlangıç adresini al
         uintptr_t base = (uintptr_t)_dyld_get_image_header(0);
