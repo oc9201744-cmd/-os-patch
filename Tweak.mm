@@ -3,35 +3,32 @@
 #include <dlfcn.h>
 #include "dobby.h"
 
-// --- Orijinal dlopen fonksiyonunu saklayacak değişken ---
+// --- Orijinal dlopen ---
 void* (*orig_dlopen)(const char* path, int mode);
 
-// --- Bizim Sahte dlopen Fonksiyonumuz ---
 void* fake_dlopen(const char* path, int mode) {
     if (path != NULL) {
-        // Oyun orijinal anogs'u yüklemeye çalışıyor mu bakıyoruz
-        if (strstr(path, "anogs.framework/anogs")) {
-            NSLog(@"[KINGMOD] Yakaladım! Orijinal anogs yerine 002.bin yükleniyor...");
+        // Log: Oyunun ne çağırdığını ESign loglarında görmek için
+        NSLog(@"[KINGMOD] dlopen çağrıldı: %s", path);
+
+        // Eğer yolun içinde "anogs" geçiyorsa (002.bin'in içindeki o gizli isim)
+        if (strstr(path, "anogs")) {
+            // ESign ile Payload içine attığın 002.bin dosyasının gerçek yolunu al
+            NSString *manualPath = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin"];
             
-            // 002.bin dosyasının yolunu bul (IPA içine attığın yer)
-            // Görselden anlaşıldığı üzere 002.bin ana uygulama paketi içinde bulunuyor.
-            NSString *fakePath = [[NSBundle mainBundle] pathForResource:@"002" ofType:@"bin"];
-            
-            if (fakePath) {
-                return orig_dlopen([fakePath UTF8String], mode);
+            if (manualPath) {
+                NSLog(@"[KINGMOD] KRİTİK: anogs yakalandı! 002.bin'e yönlendiriliyor: %@", manualPath);
+                return orig_dlopen([manualPath UTF8String], mode);
             }
         }
     }
-    // Diğer tüm kütüphaneler için orijinal yolu kullan
     return orig_dlopen(path, mode);
 }
 
 __attribute__((constructor))
-static void setup_redirection() {
-    @autoreleasepool {
-        // dlopen fonksiyonuna kanca atıyoruz.
-        // Oyun daha hiçbir güvenlik modülünü yüklemeden bu çalışmalı!
-        DobbyHook((void *)dlopen, (void *)fake_dlopen, (void **)&orig_dlopen);
-        NSLog(@"[KINGMOD] Modül saptırma sistemi aktif. Truva atı hazır.");
-    }
+static void start_kingmod() {
+    // Dobby ile dlopen'ı en tepede yakala
+    DobbyHook((void *)dlopen, (void *)fake_dlopen, (void **)&orig_dlopen);
+    
+    NSLog(@"[KINGMOD] Sistem hazır, anogs bekleniyor...");
 }
